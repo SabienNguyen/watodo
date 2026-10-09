@@ -1,0 +1,25 @@
+# Teaching workspace: lessons and notes for understanding the codebase
+learn/
+
+# Build output
+dist-ssr
+*.local
+
+node_modules
+dist
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.sw?
+
+# Test runner reports
+.vitest/
