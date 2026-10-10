@@ -13,6 +13,7 @@ export interface BasicDayFixture {
   templateId: Id;
   sectionId(name: string): Id;
   activityId(name: string): Id;
+  itemId(name: string): Id;
 }
 
 /** A store with the starter menu set up (customising, not finished). */
@@ -31,5 +32,6 @@ export function basicDay(): BasicDayFixture {
     templateId: snap.templates[0].id,
     sectionId: (name: string) => named(snap.sections, name),
     activityId: (name: string) => named(snap.activities, name),
+    itemId: (name: string) => named(snap.items, name),
   };
 }

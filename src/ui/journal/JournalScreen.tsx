@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import {
-  addPastEntry, dateFromDay, dayKeyOf, dayMinutesOf, deleteEntry, editEntry, formatDayMinutes, journalByDay,
-  nowView, sectionActivities, setDayNote, toDayMinutes,
+  addPastEntry, dayKeyOf, deleteEntry, editEntry, fullDayView, journalByDay, nowView, sectionActivities, setDayNote,
   type DayKey, type Id, type JournalDay, type JournalEntry, type Snapshot,
 } from '@/domain'
 import { Badge } from '@/components/ui/badge'
@@ -11,8 +10,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { NativeSelect } from '@/ui/NativeSelect'
-import { dayLabel, timeOf } from '@/ui/format'
+import { dayLabel } from '@/ui/format'
 import { useNowDate, useSnapshot, useWatodo } from '@/ui/hooks'
+import { FullDay } from './FullDay'
 
 /** Today first, even with nothing logged or noted; the other days follow newest first. */
 function journalDays(snap: Snapshot, today: DayKey, todayTemplateId: Id | null): JournalDay[] {
@@ -33,6 +33,7 @@ export function JournalScreen() {
   const today = dayKeyOf(now)
   const todayGuess = nowView(snap, now).guess
   const days = journalDays(snap, today, todayGuess.confirmed ? todayGuess.templateId : null)
+  const hasFullDay = fullDayView(snap, now).template !== null
   const [editingId, setEditingId] = useState<Id | null>(null)
   const [adding, setAdding] = useState(false)
   const editing = snap.journal.find(entry => entry.id === editingId)
@@ -48,6 +49,7 @@ export function JournalScreen() {
           key={day.day}
           day={day}
           isToday={day.day === today}
+          hasFullDay={hasFullDay}
           nothingLogged={snap.journal.length === 0}
           onEdit={setEditingId}
         />
@@ -58,15 +60,16 @@ export function JournalScreen() {
       )}
 
       {adding && (
-        <AddEntryDialog today={today} nowTime={formatDayMinutes(dayMinutesOf(now))} onClose={() => setAdding(false)} />
+        <AddEntryDialog today={today} onClose={() => setAdding(false)} />
       )}
     </div>
   )
 }
 
-function DaySection({ day, isToday, nothingLogged, onEdit }: {
+function DaySection({ day, isToday, hasFullDay, nothingLogged, onEdit }: {
   day: JournalDay
   isToday: boolean
+  hasFullDay: boolean
   nothingLogged: boolean
   onEdit(entryId: Id): void
 }) {
@@ -86,6 +89,8 @@ function DaySection({ day, isToday, nothingLogged, onEdit }: {
         <p className="text-sm text-muted-foreground">{templateName}</p>
       </div>
 
+      {isToday && hasFullDay && <FullDayToggle />}
+
       {day.entries.length === 0 && isToday && nothingLogged && (
         <p className="text-muted-foreground">Nothing logged yet.</p>
       )}
@@ -103,6 +108,25 @@ function DaySection({ day, isToday, nothingLogged, onEdit }: {
   )
 }
 
+/** Collapsed by default. Shows today's whole template beneath the button when open. */
+function FullDayToggle() {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <>
+      <Button
+        variant="ghost"
+        className="self-start text-muted-foreground"
+        aria-expanded={open}
+        onClick={() => setOpen(current => !current)}
+      >
+        {open ? 'Hide full day' : 'Show full day'}
+      </Button>
+      {open && <FullDay />}
+    </>
+  )
+}
+
 function EntryRow({ entry, onEdit }: { entry: JournalEntry; onEdit(): void }) {
   const { store } = useWatodo()
   const snap = useSnapshot()
@@ -112,16 +136,15 @@ function EntryRow({ entry, onEdit }: { entry: JournalEntry; onEdit(): void }) {
   return (
     <li className="flex flex-col gap-1 py-3">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-sm text-muted-foreground">{timeOf(entry)}</span>
-        <div className="flex gap-1">
+        <p className="flex flex-wrap items-baseline gap-x-2 font-medium">
+          <span>{activityName}</span>
+          <span className="text-sm font-normal text-muted-foreground">{sectionName}</span>
+        </p>
+        <div className="flex shrink-0 gap-1">
           <Button variant="ghost" size="sm" onClick={onEdit}>Edit</Button>
           <Button variant="ghost" size="sm" onClick={() => deleteEntry(store, entry.id)}>Delete</Button>
         </div>
       </div>
-      <p className="flex flex-wrap items-baseline gap-x-2 font-medium">
-        <span>{activityName}</span>
-        <span className="text-sm font-normal text-muted-foreground">{sectionName}</span>
-      </p>
       {entry.note ? <p className="text-sm">{entry.note}</p> : null}
       {entry.durationMinutes !== undefined && (
         <p className="text-sm text-muted-foreground">{`${entry.durationMinutes} min`}</p>
@@ -138,18 +161,11 @@ function parseMinutes(text: string): number | null {
 
 function EditEntryDialog({ entry, onClose }: { entry: JournalEntry; onClose(): void }) {
   const { store } = useWatodo()
-  const [time, setTime] = useState(timeOf(entry))
   const [note, setNote] = useState(entry.note ?? '')
   const [minutes, setMinutes] = useState(entry.durationMinutes === undefined ? '' : String(entry.durationMinutes))
 
   const save = () => {
-    // The day stays the same: a time after midnight is read against the day the entry was logged on.
-    const day = dayKeyOf(new Date(entry.loggedAt))
-    editEntry(store, entry.id, {
-      ...(time === timeOf(entry) ? {} : { at: dateFromDay(day, toDayMinutes(time)) }),
-      note: note.trim(),
-      durationMinutes: parseMinutes(minutes),
-    })
+    editEntry(store, entry.id, { note: note.trim(), durationMinutes: parseMinutes(minutes) })
     onClose()
   }
 
@@ -159,10 +175,6 @@ function EditEntryDialog({ entry, onClose }: { entry: JournalEntry; onClose(): v
         <DialogHeader>
           <DialogTitle>Edit entry</DialogTitle>
         </DialogHeader>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="edit-entry-time">Time</Label>
-          <Input id="edit-entry-time" type="time" value={time} onChange={e => setTime(e.target.value)} />
-        </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="edit-entry-note">Note</Label>
           <Textarea id="edit-entry-note" value={note} onChange={e => setNote(e.target.value)} />
@@ -179,29 +191,27 @@ function EditEntryDialog({ entry, onClose }: { entry: JournalEntry; onClose(): v
           />
         </div>
         <DialogFooter>
-          <Button onClick={save} disabled={time === ''}>Save</Button>
+          <Button onClick={save}>Save</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   )
 }
 
-function AddEntryDialog({ today, nowTime, onClose }: {
+function AddEntryDialog({ today, onClose }: {
   today: DayKey
-  nowTime: string
   onClose(): void
 }) {
   const { store } = useWatodo()
   const snap = useSnapshot()
   const [day, setDay] = useState(today)
-  const [time, setTime] = useState(nowTime)
   const [sectionId, setSectionId] = useState<Id | ''>('')
   const [activityId, setActivityId] = useState<Id | ''>('')
   const [note, setNote] = useState('')
   const [minutes, setMinutes] = useState('')
 
   const activities = sectionId === '' ? [] : sectionActivities(snap, sectionId)
-  const canSave = day !== '' && day <= today && time !== '' && sectionId !== '' && activityId !== ''
+  const canSave = day !== '' && day <= today && sectionId !== '' && activityId !== ''
 
   const chooseSection = (next: Id | '') => {
     setSectionId(next)
@@ -215,7 +225,7 @@ function AddEntryDialog({ today, nowTime, onClose }: {
     addPastEntry(store, {
       activityId,
       sectionId,
-      at: dateFromDay(day, toDayMinutes(time)),
+      day,
       note: trimmedNote === '' ? undefined : trimmedNote,
       durationMinutes: durationMinutes ?? undefined,
     })
@@ -237,10 +247,6 @@ function AddEntryDialog({ today, nowTime, onClose }: {
             value={day}
             onChange={e => setDay(e.target.value)}
           />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="add-entry-time">Time</Label>
-          <Input id="add-entry-time" type="time" value={time} onChange={e => setTime(e.target.value)} />
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="add-entry-section">Section</Label>

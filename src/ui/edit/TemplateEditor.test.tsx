@@ -7,6 +7,15 @@ import {
 import { renderWithWatodo } from '@/ui/testing'
 import { TemplateEditor } from './TemplateEditor'
 
+const BASIC_DAY_STEPS = [
+  'Wake up, brush teeth, get ready',
+  'Work',
+  'Post work',
+  'Dinner',
+  'Post dinner',
+  'Bedtime',
+]
+
 function basicStore(): WatodoStore {
   const store = createWatodoStore()
   setUpStarter(store)
@@ -22,9 +31,17 @@ function setup() {
   return { store, templateId, onClose }
 }
 
-/** The li of the step whose name field shows this value. */
+/** The step names as the screen lists them, top to bottom. */
+function stepNames(): string[] {
+  return screen.getAllByRole('textbox', { name: 'Step name' }).map(field => (field as HTMLInputElement).value)
+}
+
+/** The li of the step whose name field shows this value. Section selects can show the same text, so only name fields count. */
 function stepRow(name: string): HTMLElement {
-  return screen.getByDisplayValue(name).closest('li') as HTMLElement
+  const field = screen.getAllByRole('textbox', { name: 'Step name' })
+    .find(candidate => (candidate as HTMLInputElement).value === name)
+  if (field === undefined) throw new Error(`no step ${name}`)
+  return field.closest('li') as HTMLElement
 }
 
 function itemNamed(store: WatodoStore, name: string) {
@@ -41,13 +58,18 @@ describe('TemplateEditor', () => {
     expect(screen.getByRole('heading', { name: 'Edit template' })).toBeInTheDocument()
   })
 
-  test('changing a step start time to 18:00 stores 1080', () => {
-    const { store } = setup()
-    const work = stepRow('Work')
+  test('has no time inputs', () => {
+    setup()
 
-    fireEvent.change(within(work).getByLabelText('Start'), { target: { value: '18:00' } })
+    expect(document.querySelector('input[type="time"]')).toBeNull()
+    expect(screen.queryByLabelText('Start')).toBeNull()
+    expect(screen.queryByLabelText('End')).toBeNull()
+  })
 
-    expect(itemNamed(store, 'Work').start).toBe(1080)
+  test('lists the steps in position order', () => {
+    setup()
+
+    expect(stepNames()).toEqual(BASIC_DAY_STEPS)
   })
 
   test('switching Work to Slot gives it the first section', () => {
@@ -63,7 +85,34 @@ describe('TemplateEditor', () => {
     expect(within(work).getByRole('combobox', { name: 'Section' })).toHaveDisplayValue('Post work')
   })
 
-  test('Add step adds a fixed step after the last item', () => {
+  test('Move down on the first step makes it the second', () => {
+    const { store } = setup()
+
+    fireEvent.click(within(stepRow('Wake up, brush teeth, get ready')).getByRole('button', { name: 'Move down' }))
+
+    expect(stepNames().slice(0, 2)).toEqual(['Work', 'Wake up, brush teeth, get ready'])
+    expect(readSnapshot(store).items.map(item => item.name).slice(0, 2))
+      .toEqual(['Work', 'Wake up, brush teeth, get ready'])
+  })
+
+  test('Move up on the second step makes it the first', () => {
+    const { store } = setup()
+
+    fireEvent.click(within(stepRow('Work')).getByRole('button', { name: 'Move up' }))
+
+    expect(stepNames()[0]).toBe('Work')
+    expect(readSnapshot(store).items[0].name).toBe('Work')
+  })
+
+  test('Move up is disabled on the first step, and Move down on the last', () => {
+    setup()
+
+    expect(within(stepRow('Wake up, brush teeth, get ready')).getByRole('button', { name: 'Move up' })).toBeDisabled()
+    expect(within(stepRow('Bedtime')).getByRole('button', { name: 'Move down' })).toBeDisabled()
+    expect(within(stepRow('Work')).getByRole('button', { name: 'Move up' })).toBeEnabled()
+  })
+
+  test('Add step appends a fixed step after the last one', () => {
     const { store } = setup()
     const before = readSnapshot(store).items.length
 
@@ -73,8 +122,8 @@ describe('TemplateEditor', () => {
     expect(snap.items).toHaveLength(before + 1)
     const added = itemNamed(store, 'New step')
     expect(added.kind).toBe('fixed')
-    expect(added.start).toBe(1380)
-    expect(added.end).toBe(1440)
+    expect(snap.items.at(-1)?.name).toBe('New step')
+    expect(stepNames().at(-1)).toBe('New step')
   })
 
   test('Delete step removes that step', () => {

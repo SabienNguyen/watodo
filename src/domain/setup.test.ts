@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
 import { createWatodoStore, readSnapshot } from './store';
+import { TABLE } from './schema';
 import { finishSetup, setupState, setUpStarter } from './setup';
 
 test('a new store is new', () => {
@@ -25,20 +26,22 @@ test('the starter menu is customising until finished', () => {
   expect(setupState(store)).toBe('done');
 });
 
-test('the starter items have the agreed names and times', () => {
+test('the starter items are in the agreed order, with positions and no times', () => {
   const store = createWatodoStore();
   setUpStarter(store);
-  const items = readSnapshot(store).items
-    .sort((a, b) => a.start - b.start)
-    .map(({ kind, name, start, end }) => [kind, name, start, end]);
-  expect(items).toEqual([
-    ['fixed', 'Wake up, brush teeth, get ready', 390, 510],
-    ['fixed', 'Work', 540, 1050],
-    ['slot', 'Post work', 1050, 1140],
-    ['fixed', 'Dinner', 1140, 1170],
-    ['slot', 'Post dinner', 1170, 1290],
-    ['slot', 'Bedtime', 1290, 1380],
+  const items = readSnapshot(store).items;
+  expect(items.map(({ kind, name, position }) => [kind, name, position])).toEqual([
+    ['fixed', 'Wake up, brush teeth, get ready', 0],
+    ['fixed', 'Work', 1],
+    ['slot', 'Post work', 2],
+    ['fixed', 'Dinner', 3],
+    ['slot', 'Post dinner', 4],
+    ['slot', 'Bedtime', 5],
   ]);
+  for (const itemId of store.getRowIds(TABLE.items)) {
+    expect(store.getRow(TABLE.items, itemId)).not.toHaveProperty('start');
+    expect(store.getRow(TABLE.items, itemId)).not.toHaveProperty('end');
+  }
 });
 
 test('setting up again does not add a second basic day', () => {

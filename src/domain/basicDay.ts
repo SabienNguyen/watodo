@@ -1,6 +1,5 @@
 // Private to src/domain: the starter template used by setup and by restoring the last template.
 import type { Id } from './rules';
-import { toDayMinutes } from './rules';
 import type { WatodoStore } from './store';
 import {
   ensureActivity, ensureListing, ensureSection, newId, nextPosition, TABLE,
@@ -12,13 +11,13 @@ const SECTIONS: { name: string; activities: string[] }[] = [
   { name: 'Bedtime', activities: ['Journal', 'Stretch', 'Read'] },
 ];
 
-const ITEMS: { kind: 'fixed' | 'slot'; name: string; start: string; end: string; section?: string }[] = [
-  { kind: 'fixed', name: 'Wake up, brush teeth, get ready', start: '06:30', end: '08:30' },
-  { kind: 'fixed', name: 'Work', start: '09:00', end: '17:30' },
-  { kind: 'slot', name: 'Post work', start: '17:30', end: '19:00', section: 'Post work' },
-  { kind: 'fixed', name: 'Dinner', start: '19:00', end: '19:30' },
-  { kind: 'slot', name: 'Post dinner', start: '19:30', end: '21:30', section: 'Post dinner' },
-  { kind: 'slot', name: 'Bedtime', start: '21:30', end: '23:00', section: 'Bedtime' },
+const ITEMS: { kind: 'fixed' | 'slot'; name: string; section?: string }[] = [
+  { kind: 'fixed', name: 'Wake up, brush teeth, get ready' },
+  { kind: 'fixed', name: 'Work' },
+  { kind: 'slot', name: 'Post work', section: 'Post work' },
+  { kind: 'fixed', name: 'Dinner' },
+  { kind: 'slot', name: 'Post dinner', section: 'Post dinner' },
+  { kind: 'slot', name: 'Bedtime', section: 'Bedtime' },
 ];
 
 /**
@@ -39,16 +38,14 @@ export function addBasicDayTemplate(store: WatodoStore, labelId: Id): Id {
     }
   }
 
-  for (const item of ITEMS) {
-    const itemId = newId();
-    store.setRow(TABLE.items, itemId, {
+  ITEMS.forEach((item, position) => {
+    store.setRow(TABLE.items, newId(), {
       templateId,
       kind: item.kind,
       name: item.name,
-      start: toDayMinutes(item.start),
-      end: toDayMinutes(item.end),
+      position,
       ...(item.section === undefined ? {} : { sectionId: ensureSection(store, item.section) }),
     });
-  }
+  });
   return templateId;
 }

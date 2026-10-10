@@ -3,12 +3,20 @@ import * as rules from './index'
 
 test('re-exports every rule function and constant', () => {
   const names: (keyof typeof rules)[] = [
-    'DAY_START_MINUTES', 'dayKeyOf', 'dayMinutesOf', 'weekdayOf', 'addDays',
-    'dateFromDay', 'toDayMinutes', 'formatDayMinutes', 'guessTemplate',
-    'itemsOf', 'positionAt', 'lastDone', 'nowView', 'fullDayView',
+    'DAY_START_MINUTES', 'dayKeyOf', 'weekdayOf', 'addDays', 'noonOf',
+    'guessTemplate',
+    'STAY_MS', 'itemsOf', 'slotsOf', 'positionAt',
+    'lastDone', 'nowView', 'fullDayView',
     'journalByDay', 'progress', 'dotStrip',
   ]
   for (const name of names) {
     expect(rules[name], name).toBeDefined()
+  }
+})
+
+test('no longer re-exports the clock-time helpers', () => {
+  const removed = ['dayMinutesOf', 'dateFromDay', 'toDayMinutes', 'formatDayMinutes']
+  for (const name of removed) {
+    expect(name in rules, name).toBe(false)
   }
 })

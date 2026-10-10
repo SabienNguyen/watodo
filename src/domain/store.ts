@@ -49,14 +49,14 @@ const readItem: RowReader<TemplateItem> = (id, row) => {
   const templateId = text(row, 'templateId');
   const kind = text(row, 'kind');
   const name = text(row, 'name');
-  const start = num(row, 'start');
-  const end = num(row, 'end');
+  // Rows saved before positions existed kept their order in `start`.
+  const position = num(row, 'position') ?? num(row, 'start');
   if (templateId === undefined || (kind !== 'fixed' && kind !== 'slot') || name === undefined
-    || start === undefined || end === undefined) {
+    || position === undefined) {
     return undefined;
   }
   const sectionId = text(row, 'sectionId');
-  return { id, templateId, kind, name, start, end, ...(sectionId === undefined ? {} : { sectionId }) };
+  return { id, templateId, kind, name, position, ...(sectionId === undefined ? {} : { sectionId }) };
 };
 
 const readSection: RowReader<Section> = (id, row) => {
@@ -85,10 +85,12 @@ const readJournalEntry: RowReader<JournalEntry> = (id, row) => {
   const sectionId = text(row, 'sectionId');
   const loggedAt = num(row, 'loggedAt');
   if (activityId === undefined || sectionId === undefined || loggedAt === undefined) return undefined;
+  const itemId = text(row, 'itemId');
   const note = text(row, 'note');
   const durationMinutes = num(row, 'durationMinutes');
   return {
     id, activityId, sectionId, loggedAt,
+    ...(itemId === undefined ? {} : { itemId }),
     ...(note === undefined ? {} : { note }),
     ...(durationMinutes === undefined ? {} : { durationMinutes }),
   };
@@ -96,13 +98,15 @@ const readJournalEntry: RowReader<JournalEntry> = (id, row) => {
 
 const readDayRecord: RowReader<DayRecord> = (day, row) => {
   const templateId = text(row, 'templateId');
-  const earlyItemId = text(row, 'earlyItemId');
   const note = text(row, 'note');
+  const chosenItemId = text(row, 'chosenItemId');
+  const chosenAt = num(row, 'chosenAt');
   return {
     day,
     ...(templateId === undefined ? {} : { templateId }),
-    ...(earlyItemId === undefined ? {} : { earlyItemId }),
     ...(note === undefined ? {} : { note }),
+    ...(chosenItemId === undefined ? {} : { chosenItemId }),
+    ...(chosenAt === undefined ? {} : { chosenAt }),
   };
 };
 
@@ -116,7 +120,7 @@ export function readSnapshot(store: WatodoStore): Snapshot {
   return {
     labels: readRows(store, TABLE.labels, readLabel).sort(byPosition),
     templates: readRows(store, TABLE.templates, readTemplate).sort(byPosition),
-    items: readRows(store, TABLE.items, readItem).sort((a, b) => a.start - b.start),
+    items: readRows(store, TABLE.items, readItem).sort(byPosition),
     sections: readRows(store, TABLE.sections, readSection).sort(byPosition),
     activities: readRows(store, TABLE.activities, readActivity),
     listings: readRows(store, TABLE.listings, readListing).sort(byPosition),

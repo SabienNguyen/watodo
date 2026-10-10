@@ -10,7 +10,7 @@ test('renders the watodo heading', () => {
   expect(screen.getByRole('heading', { level: 1, name: 'watodo' })).toBeInTheDocument()
 })
 
-test('a new store shows the tutorial and no tab bar until Done, open watodo, then the five tabs with Now current', () => {
+test('a new store shows the tutorial and no tab bar until Done, open watodo, then the four tabs with Now current', () => {
   renderWithWatodo(<App />, { store: createWatodoStore() })
 
   expect(screen.getByRole('heading', { level: 1, name: 'watodo' })).toBeInTheDocument()
@@ -24,9 +24,9 @@ test('a new store shows the tutorial and no tab bar until Done, open watodo, the
   fireEvent.click(screen.getByRole('button', { name: 'Done, open watodo' }))
 
   const tabs = within(screen.getByRole('navigation'))
-  for (const name of ['Now', 'Day', 'Journal', 'Progress', 'Edit']) {
-    expect(tabs.getByRole('button', { name })).toBeInTheDocument()
-  }
+  const buttons = tabs.getAllByRole('button')
+  expect(buttons.map(button => button.textContent)).toEqual(['Now', 'Journal', 'Progress', 'Edit'])
   expect(tabs.getByRole('button', { name: 'Now' })).toHaveAttribute('aria-current', 'page')
-  expect(tabs.getByRole('button', { name: 'Day' })).not.toHaveAttribute('aria-current')
+  expect(tabs.getByRole('button', { name: 'Journal' })).not.toHaveAttribute('aria-current')
+  expect(tabs.queryByRole('button', { name: 'Day' })).toBeNull()
 })

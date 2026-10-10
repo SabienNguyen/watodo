@@ -10,12 +10,13 @@ TypeScript, React + Vite, Tailwind, shadcn/ui, TinyBase (`MergeableStore`, saved
 
 ## Concepts
 
-- **Template**: the shape of one type of day. An ordered list of items, each with a time window. An item is a **fixed step** (Work, Dinner: nothing to choose, display only, never logged) or a **slot** (Post work: points at exactly one section).
+- **Template**: the shape of one type of day. An ordered list of items with no times. An item is a **fixed step** (Work, Dinner: nothing to choose, display only, never logged) or a **slot** (Post work: points at exactly one section).
 - **Section**: a named group in the activities menu. Sections are shared: every template whose slot points at a section offers the same activities. No per-template overrides.
 - **Activity**: defined once, can be listed in several sections. "Last done" is shared across sections.
 - **Label**: a user-created name for a kind of day (Work day, Weekend) with the weekdays it usually covers. Each template has exactly one label; a label can have several templates.
 - **Default template**: one template is always the default, used when no label covers today.
-- **Journal**: one entry per logged activity (activity, section, time, optional note and duration).
+- **Journal**: one entry per logged activity (activity, section, the slot it was logged in, optional note and duration). The moment of each log is recorded but never shown.
+- **No clock times anywhere on screen.** Templates have no times, and the app never displays the time of a log. Dates are shown; times are not.
 - **Day**: a day runs from 04:00 to 04:00. A log at 00:15 belongs to the evening before.
 
 ## Behaviour
@@ -28,17 +29,23 @@ On opening, the app guesses today's template, in this order:
 
 The first log of each day always asks which template today is, with the guess highlighted, even when only one template exists. That page can also open the template editor to create a new template; the pending tap is kept and logged once a template is chosen. Later logs that day do not ask. Today's template can be switched at any time from the Now screen; entries already logged are kept.
 
+### Which slot you are in
+The app works out the current slot from what you last did, not from the clock. Fixed steps are never "current"; they are skipped over.
+1. If you picked a slot by hand today, and have not logged since, that slot.
+2. Otherwise, if you logged something today: the slot you logged in while that log is less than an hour old (so a second activity can be added), and after that the next slot in the template. After the last slot it stays on the last slot.
+3. Otherwise the first slot in today's template.
+
 ### Now screen
-- In a slot: the slot name and its section's activities in stable order, each with "last: today 17:45 / yesterday / 3 days ago / never". Tapping one logs it.
-- In a fixed step: says where you are and what slot is next, with a button to end the step early, which shows the next slot before its usual time.
-- In a gap between items: says nothing is planned, shows the next slot, with a button to start it now.
+- A row of today's slots with the current one marked; tapping one makes it the current slot.
+- The current slot's name and its section's activities in stable order, each with "last: today / yesterday / 3 days ago / never". Tapping one logs it.
 - After a log: a bar for 6 seconds with **Undo** and **Add note** (note and duration, both optional).
+- A template with no slots says so and points to Edit.
 
 ### Other screens
-- **Full day**: today's template in order, fixed steps and slots, current item highlighted. Fixed steps cannot be tapped.
-- **Journal**: entries by day, newest first, with the day's template. Entries can be deleted, have their time, note and duration edited, and be added for earlier days. Each day has a free-text note.
+- **Full day**: in the Journal, today's section has a `Show full day` control that expands today's whole template in order, fixed steps and slots, with no times and the current slot highlighted. Nothing in it can be tapped. It is collapsed by default. There is no separate Day tab and the Now screen does not show it; the tabs are Now, Journal, Progress, Edit.
+- **Journal**: entries by day, newest first, in the order they were logged, with the day's template and no times. Entries can be deleted, have their note and duration edited, and be added for earlier days. Each day has a free-text note.
 - **Progress**: counts per activity and per section over 7, 30 or 90 days, and a 4-week dot strip per activity.
-- **Edit**: sections and their activities; labels and their weekdays; templates (create, copy, rename, delete, set default, edit items).
+- **Edit**: sections and their activities; labels and their weekdays; templates (create, copy, rename, delete, set default, add, remove and reorder items).
 - **First launch**: a required short tutorial. It creates a basic day (one label, one template, a starter menu), lets you adjust it, and only then opens the Now screen.
 
 ### Deleting

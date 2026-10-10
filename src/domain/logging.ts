@@ -1,34 +1,35 @@
-import { dayKeyOf, nowView, type DayKey, type Id } from './rules';
+import { dayKeyOf, noonOf, nowView, type DayKey, type Id } from './rules';
 import type { Clock } from './clock';
 import { readSnapshot, type WatodoStore } from './store';
 import { TABLE, writeJournalRow } from './schema';
 
-export interface PendingLog { activityId: Id; sectionId: Id }
+const ONE_MINUTE_MS = 60 * 1000;
+
+export interface PendingLog { activityId: Id; sectionId: Id; itemId: Id }
 
 export type LogResult =
   | { status: 'logged'; entryId: Id }
   | { status: 'needs-template'; pending: PendingLog; guessTemplateId: Id }
-  | { status: 'not-available' };                              // not in a slot, or activity not listed in it
+  | { status: 'not-available' };                              // no slot now, or activity not listed in it
 
 export function logActivity(store: WatodoStore, clock: Clock, activityId: Id): LogResult {
   const now = clock();
   const view = nowView(readSnapshot(store), now);
   const position = view.position;
-  if (position === null || position.kind !== 'slot' || view.template === null) {
-    return { status: 'not-available' };
-  }
-  const sectionId = position.item.sectionId;
+  if (position === null || view.template === null) return { status: 'not-available' };
+
+  const { id: itemId, sectionId } = position.item;
   const listed = view.activities.some(({ activity }) => activity.id === activityId);
   if (sectionId === undefined || !listed) return { status: 'not-available' };
 
   if (!view.guess.confirmed) {
     return {
       status: 'needs-template',
-      pending: { activityId, sectionId },
+      pending: { activityId, sectionId, itemId },
       guessTemplateId: view.template.id,
     };
   }
-  const entryId = writeJournalRow(store, { activityId, sectionId, loggedAt: now.getTime() });
+  const entryId = writeJournalRow(store, { activityId, sectionId, itemId, loggedAt: now.getTime() });
   return { status: 'logged', entryId };
 }
 
@@ -39,16 +40,20 @@ export function confirmDay(store: WatodoStore, clock: Clock, templateId: Id, pen
   return store.transaction(() => {
     store.setCell(TABLE.days, day, 'templateId', templateId);
 
-    const earlyItemId = store.getCell(TABLE.days, day, 'earlyItemId');
-    const earlyStillInTemplate = typeof earlyItemId === 'string'
-      && store.getCell(TABLE.items, earlyItemId, 'templateId') === templateId;
-    if (earlyItemId !== undefined && !earlyStillInTemplate) {
-      store.delCell(TABLE.days, day, 'earlyItemId');
+    // A slot picked by hand belongs to one template; confirming another template drops it.
+    const chosenItemId = store.getCell(TABLE.days, day, 'chosenItemId');
+    if (typeof chosenItemId === 'string'
+      && store.getCell(TABLE.items, chosenItemId, 'templateId') !== templateId) {
+      store.delCell(TABLE.days, day, 'chosenItemId');
+      if (store.hasCell(TABLE.days, day, 'chosenAt')) store.delCell(TABLE.days, day, 'chosenAt');
     }
 
     if (pending === undefined) return null;
     return writeJournalRow(store, {
-      activityId: pending.activityId, sectionId: pending.sectionId, loggedAt: now.getTime(),
+      activityId: pending.activityId,
+      sectionId: pending.sectionId,
+      itemId: pending.itemId,
+      loggedAt: now.getTime(),
     });
   });
 }
@@ -66,40 +71,52 @@ export function undoLast(store: WatodoStore, clock: Clock): Id | null {
   return latest.id;
 }
 
-/** In a fixed step or a gap, starts the next slot early for today. */
-export function endStepEarly(store: WatodoStore, clock: Clock): boolean {
-  const view = nowView(readSnapshot(store), clock());
-  const position = view.position;
-  if (position === null || position.kind === 'slot' || position.next === null) return false;
-  store.setCell(TABLE.days, view.day, 'earlyItemId', position.next.id);
-  return true;
+/** Picks a slot by hand for today. Does nothing unless `itemId` is an existing slot. */
+export function goToSlot(store: WatodoStore, clock: Clock, itemId: Id): void {
+  if (store.getCell(TABLE.items, itemId, 'kind') !== 'slot') return;
+  const now = clock();
+  store.transaction(() => {
+    const day = dayKeyOf(now);
+    store.setCell(TABLE.days, day, 'chosenItemId', itemId);
+    store.setCell(TABLE.days, day, 'chosenAt', now.getTime());
+  });
 }
 
 export function deleteEntry(store: WatodoStore, entryId: Id): void {
   store.delRow(TABLE.journal, entryId);
 }
 
+/**
+ * Adds an entry to an earlier day. It goes one minute after that day's latest entry,
+ * so entries keep the order they were added in; the first one of a day is at noon.
+ */
 export function addPastEntry(
   store: WatodoStore,
-  input: { activityId: Id; sectionId: Id; at: Date; note?: string; durationMinutes?: number },
+  input: { activityId: Id; sectionId: Id; day: DayKey; note?: string; durationMinutes?: number },
 ): Id {
+  let latest: number | undefined;
+  for (const entry of readSnapshot(store).journal) {
+    if (dayKeyOf(new Date(entry.loggedAt)) !== input.day) continue;
+    if (latest === undefined || entry.loggedAt > latest) latest = entry.loggedAt;
+  }
+  const loggedAt = latest === undefined ? noonOf(input.day).getTime() : latest + ONE_MINUTE_MS;
   return writeJournalRow(store, {
     activityId: input.activityId,
     sectionId: input.sectionId,
-    loggedAt: input.at.getTime(),
+    loggedAt,
     note: input.note,
     durationMinutes: input.durationMinutes,
   });
 }
 
+/** An empty note removes it; a null duration removes it. */
 export function editEntry(
   store: WatodoStore,
   entryId: Id,
-  patch: { at?: Date; note?: string; durationMinutes?: number | null },
+  patch: { note?: string; durationMinutes?: number | null },
 ): void {
   if (!store.hasRow(TABLE.journal, entryId)) return;
   store.transaction(() => {
-    if (patch.at !== undefined) store.setCell(TABLE.journal, entryId, 'loggedAt', patch.at.getTime());
     if (patch.note !== undefined) {
       if (patch.note === '') store.delCell(TABLE.journal, entryId, 'note');
       else store.setCell(TABLE.journal, entryId, 'note', patch.note);

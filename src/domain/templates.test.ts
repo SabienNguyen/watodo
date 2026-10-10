@@ -4,18 +4,24 @@ import { deleteSection } from './menu';
 import { nowView, type TemplateItem } from './rules';
 import { readSnapshot } from './store';
 import {
-  addItem, addLabel, createTemplate, deleteItem, deleteLabel, deleteTemplate, renameTemplate,
+  addItem, addLabel, createTemplate, deleteItem, deleteLabel, deleteTemplate, moveItem, renameTemplate,
   setDefaultTemplate, setLabelWeekdays, setTemplateLabel, updateItem,
 } from './templates';
 import { at, basicDay } from './testing';
 
+const BASIC_ORDER = [
+  'Wake up, brush teeth, get ready', 'Work', 'Post work', 'Dinner', 'Post dinner', 'Bedtime',
+];
+
 function shape(items: TemplateItem[]) {
-  return items
-    .sort((a, b) => a.start - b.start)
-    .map(({ kind, name, start, end, sectionId }) => ({ kind, name, start, end, sectionId }));
+  return items.map(({ kind, name, position, sectionId }) => ({ kind, name, position, sectionId }));
 }
 
-test('createTemplate with copyFrom copies every item with new ids and the same sections', () => {
+function orderOf(store: ReturnType<typeof basicDay>['store'], templateId: string): string[] {
+  return readSnapshot(store).items.filter(item => item.templateId === templateId).map(item => item.name);
+}
+
+test('createTemplate with copyFrom copies every item with new ids, the same positions and sections', () => {
   const { store, labelId, templateId } = basicDay();
   const copy = createTemplate(store, { name: 'Copy', labelId, copyFrom: templateId });
 
@@ -25,6 +31,7 @@ test('createTemplate with copyFrom copies every item with new ids and the same s
   expect(copied).toHaveLength(6);
   expect(copied.some(item => original.some(o => o.id === item.id))).toBe(false);
   expect(shape(copied)).toEqual(shape(original));
+  expect(copied.map(item => item.name)).toEqual(BASIC_ORDER);
 });
 
 test('the first template becomes the default, later ones do not take it', () => {
@@ -115,22 +122,84 @@ test('setDefaultTemplate moves the default', () => {
   expect(readSnapshot(store).defaultTemplateId).not.toBe(templateId);
 });
 
-test('items can be added, updated and deleted', () => {
-  const { store, templateId, sectionId } = basicDay();
-  const itemId = addItem(store, templateId, {
-    kind: 'slot', name: 'Late', start: 1380, end: 1440, sectionId: sectionId('Bedtime'),
+test('addItem appends the item after the highest position in its template, with the name trimmed', () => {
+  const { store, templateId, labelId, sectionId } = basicDay();
+  const late = addItem(store, templateId, { kind: 'slot', name: ' Late ', sectionId: sectionId('Bedtime') });
+  expect(readSnapshot(store).items.filter(item => item.templateId === templateId).at(-1)).toEqual({
+    id: late, templateId, kind: 'slot', name: 'Late', position: 6, sectionId: sectionId('Bedtime'),
   });
 
-  updateItem(store, itemId, { name: 'Late reading', end: 1450 });
-  expect(readSnapshot(store).items.find(item => item.id === itemId)).toMatchObject({
-    name: 'Late reading', start: 1380, end: 1450, sectionId: sectionId('Bedtime'),
+  const empty = createTemplate(store, { name: 'Empty', labelId });
+  const first = addItem(store, empty, { kind: 'fixed', name: 'Rest' });
+  expect(readSnapshot(store).items.find(item => item.id === first)).toMatchObject({ position: 0 });
+});
+
+test('moveItem swaps an item with its neighbour, up or down', () => {
+  const { store, templateId, itemId } = basicDay();
+
+  moveItem(store, itemId('Work'), 'up');
+  expect(orderOf(store, templateId).slice(0, 2)).toEqual(['Work', 'Wake up, brush teeth, get ready']);
+
+  moveItem(store, itemId('Work'), 'down');
+  expect(orderOf(store, templateId)).toEqual(BASIC_ORDER);
+
+  moveItem(store, itemId('Post work'), 'down');
+  expect(orderOf(store, templateId)).toEqual([
+    'Wake up, brush teeth, get ready', 'Work', 'Dinner', 'Post work', 'Post dinner', 'Bedtime',
+  ]);
+});
+
+test('moveItem at either end of the template does nothing', () => {
+  const { store, templateId, itemId } = basicDay();
+  const before = readSnapshot(store).items;
+
+  moveItem(store, itemId('Wake up, brush teeth, get ready'), 'up');
+  moveItem(store, itemId('Bedtime'), 'down');
+
+  expect(readSnapshot(store).items).toEqual(before);
+  expect(orderOf(store, templateId)).toEqual(BASIC_ORDER);
+});
+
+test('moveItem never swaps with an item of another template', () => {
+  const { store, templateId, labelId } = basicDay();
+  const other = createTemplate(store, { name: 'Short', labelId });
+  const solo = addItem(store, other, { kind: 'fixed', name: 'Solo' });
+  addItem(store, other, { kind: 'fixed', name: 'Two' });
+
+  moveItem(store, solo, 'down');
+  expect(orderOf(store, other)).toEqual(['Two', 'Solo']);
+  expect(orderOf(store, templateId)).toEqual(BASIC_ORDER);
+
+  moveItem(store, solo, 'down');
+  expect(orderOf(store, other)).toEqual(['Two', 'Solo']);
+  expect(orderOf(store, templateId)).toEqual(BASIC_ORDER);
+});
+
+test('updateItem renames an item, and making a slot fixed removes its section', () => {
+  const { store, itemId, sectionId } = basicDay();
+  const postWork = itemId('Post work');
+  updateItem(store, postWork, { name: 'Commute home' });
+  expect(readSnapshot(store).items.find(item => item.id === postWork)).toMatchObject({
+    name: 'Commute home', kind: 'slot', sectionId: sectionId('Post work'),
   });
 
-  updateItem(store, itemId, { kind: 'fixed' });
-  expect(readSnapshot(store).items.find(item => item.id === itemId)?.sectionId).toBeUndefined();
+  updateItem(store, postWork, { kind: 'fixed' });
+  expect(readSnapshot(store).items.find(item => item.id === postWork)?.sectionId).toBeUndefined();
+});
 
-  deleteItem(store, itemId);
-  expect(readSnapshot(store).items).toHaveLength(6);
+test('updateItem with sectionId null removes the section of a slot', () => {
+  const { store, itemId } = basicDay();
+  const bedtime = itemId('Bedtime');
+  updateItem(store, bedtime, { sectionId: null });
+  expect(readSnapshot(store).items.find(item => item.id === bedtime))
+    .toMatchObject({ kind: 'slot' });
+  expect(readSnapshot(store).items.find(item => item.id === bedtime)?.sectionId).toBeUndefined();
+});
+
+test('deleteItem removes one item from the template', () => {
+  const { store, templateId, itemId } = basicDay();
+  deleteItem(store, itemId('Bedtime'));
+  expect(orderOf(store, templateId)).toHaveLength(5);
 });
 
 test('guessing: a second template under Work day is guessed on Tuesday once it was confirmed on Monday', () => {

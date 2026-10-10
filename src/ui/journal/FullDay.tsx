@@ -1,22 +1,19 @@
-import { formatDayMinutes, fullDayView } from '@/domain'
+import { fullDayView } from '@/domain'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { useNowDate, useSnapshot } from '@/ui/hooks'
 
-export function FullDayScreen() {
+/** The list of today's items. Shown from the Journal screen; no heading, no toggle. */
+export function FullDay() {
   const snap = useSnapshot()
   const now = useNowDate()
   const view = fullDayView(snap, now)
 
-  if (view.template === null) {
-    return <p className="text-muted-foreground">No template yet.</p>
-  }
+  if (view.template === null) return null
 
   return (
     <div className="flex flex-col gap-6">
-      <h2 className="text-xl font-semibold">{view.template.name}</h2>
-
-      <ol className="flex flex-col gap-3">
+      <ol className="flex list-none flex-col gap-3">
         {view.items.map(({ item, current, activities }) => (
           <li
             key={item.id}
@@ -27,12 +24,9 @@ export function FullDayScreen() {
             )}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="text-sm text-muted-foreground">
-                {`${formatDayMinutes(item.start)} to ${formatDayMinutes(item.end)}`}
-              </span>
+              <p className="font-medium">{item.name}</p>
               <Badge variant={item.kind === 'slot' ? 'default' : 'secondary'}>{item.kind}</Badge>
             </div>
-            <p className="font-medium">{item.name}</p>
             {item.kind === 'slot' && (
               <p className="text-sm text-muted-foreground">
                 {activities.length > 0 ? activities.map(activity => activity.name).join(', ') : 'No activities yet'}

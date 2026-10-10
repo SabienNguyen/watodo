@@ -1,11 +1,11 @@
 import { expect, test } from 'vitest';
 import {
-  addPastEntry, confirmDay, deleteEntry, editEntry, endStepEarly, logActivity, setDayNote, undoLast,
+  addPastEntry, confirmDay, deleteEntry, editEntry, goToSlot, logActivity, setDayNote, undoLast,
   type LogResult, type PendingLog,
 } from './logging';
-import { nowView, journalByDay, toDayMinutes, type Id } from './rules';
+import { journalByDay, nowView, noonOf, type Id } from './rules';
 import { readSnapshot } from './store';
-import { addItem, createTemplate } from './templates';
+import { createTemplate } from './templates';
 import { at, basicDay } from './testing';
 
 function pendingOf(result: LogResult): PendingLog {
@@ -18,15 +18,15 @@ function loggedIdOf(result: LogResult): Id {
   return result.entryId;
 }
 
-test('the first log of the day asks which template, the answer logs it, later logs do not ask', () => {
-  const { store, templateId, sectionId, activityId } = basicDay();
+test('the first log of the day asks which template, the answer logs it in its slot, later logs do not ask', () => {
+  const { store, templateId, sectionId, activityId, itemId } = basicDay();
   let now = at(17, 45);
   const clock = () => now;
 
   const first = logActivity(store, clock, activityId('Gym'));
   expect(first).toEqual({
     status: 'needs-template',
-    pending: { activityId: activityId('Gym'), sectionId: sectionId('Post work') },
+    pending: { activityId: activityId('Gym'), sectionId: sectionId('Post work'), itemId: itemId('Post work') },
     guessTemplateId: templateId,
   });
   expect(readSnapshot(store).journal).toHaveLength(0);
@@ -35,12 +35,17 @@ test('the first log of the day asks which template, the answer logs it, later lo
   expect(entryId).toEqual(expect.any(String));
   const snap = readSnapshot(store);
   expect(snap.journal).toEqual([
-    expect.objectContaining({ id: entryId, activityId: activityId('Gym'), sectionId: sectionId('Post work') }),
+    expect.objectContaining({
+      id: entryId, activityId: activityId('Gym'), sectionId: sectionId('Post work'), itemId: itemId('Post work'),
+    }),
   ]);
   expect(nowView(snap, now).guess).toMatchObject({ templateId, confirmed: true, reason: 'confirmed' });
 
+  now = at(17, 50);
   expect(logActivity(store, clock, activityId('Walk'))).toMatchObject({ status: 'logged' });
-  expect(readSnapshot(store).journal).toHaveLength(2);
+  const snapAfter = readSnapshot(store);
+  expect(snapAfter.journal).toHaveLength(2);
+  expect(snapAfter.journal[1]).toMatchObject({ activityId: activityId('Walk'), itemId: itemId('Post work') });
 });
 
 test('confirming without a pending log writes no entry and returns null', () => {
@@ -50,52 +55,105 @@ test('confirming without a pending log writes no entry and returns null', () => 
   expect(readSnapshot(store).journal).toHaveLength(0);
 });
 
-test('logging during a fixed step, or an activity not listed in the slot, is not available', () => {
-  const { store, activityId } = basicDay();
-  let now = at(10, 0);
-  const clock = () => now;
-  expect(logActivity(store, clock, activityId('Gym'))).toEqual({ status: 'not-available' });
-
-  now = at(17, 45);
+test('an activity not listed in the current slot, or a template with no slots, is not available', () => {
+  const { store, activityId, labelId, templateId } = basicDay();
+  const clock = () => at(17, 45);
+  confirmDay(store, clock, templateId);
   expect(logActivity(store, clock, activityId('Journal'))).toEqual({ status: 'not-available' });
   expect(readSnapshot(store).journal).toHaveLength(0);
-});
 
-test('ending a fixed step early starts the next slot early, without confirming a template', () => {
-  const { store } = basicDay();
-  const now = at(16, 0);
-  const clock = () => now;
-
-  expect(endStepEarly(store, clock)).toBe(true);
-  const view = nowView(readSnapshot(store), now);
-  expect(view.guess.confirmed).toBe(false);
-  expect(view.position).toMatchObject({ kind: 'slot', early: true, item: { name: 'Post work' } });
-});
-
-test('ending a step early after the last slot does nothing', () => {
-  const { store } = basicDay();
-  const clock = () => at(23, 30);
-  expect(endStepEarly(store, clock)).toBe(false);
-});
-
-test('confirming a template without the early item clears the early start', () => {
-  const { store, labelId } = basicDay();
   const empty = createTemplate(store, { name: 'Empty', labelId });
-  let now = at(16, 0);
-  const clock = () => now;
-  endStepEarly(store, clock);
-
   confirmDay(store, clock, empty);
-  now = at(16, 0);
-  expect(readSnapshot(store).days[0].earlyItemId).toBeUndefined();
-  expect(nowView(readSnapshot(store), now).position).toMatchObject({ kind: 'gap' });
+  expect(logActivity(store, clock, activityId('Gym'))).toEqual({ status: 'not-available' });
+});
+
+test('the current slot follows the last log: it stays for an hour, then moves to the next slot', () => {
+  const { store, templateId, activityId, itemId } = basicDay();
+  let now = at(17, 45);
+  const clock = () => now;
+  const first = logActivity(store, clock, activityId('Gym'));
+  confirmDay(store, clock, templateId, pendingOf(first));
+
+  now = at(18, 0);
+  expect(nowView(readSnapshot(store), now).position)
+    .toMatchObject({ reason: 'stayed', item: { name: 'Post work' } });
+
+  now = at(19, 30);
+  expect(nowView(readSnapshot(store), now).position)
+    .toMatchObject({ reason: 'advanced', item: { name: 'Post dinner' } });
+  expect(logActivity(store, clock, activityId('Guitar'))).toMatchObject({ status: 'logged' });
+  expect(readSnapshot(store).journal.at(-1))
+    .toMatchObject({ activityId: activityId('Guitar'), itemId: itemId('Post dinner') });
+
+  expect(logActivity(store, clock, activityId('Gym'))).toEqual({ status: 'not-available' });
+});
+
+test('goToSlot makes that slot current with reason chosen, and a later log in it keeps it there', () => {
+  const { store, templateId, activityId, itemId } = basicDay();
+  let now = at(17, 45);
+  const clock = () => now;
+  confirmDay(store, clock, templateId);
+
+  now = at(20, 0);
+  goToSlot(store, clock, itemId('Bedtime'));
+  expect(nowView(readSnapshot(store), now).position)
+    .toMatchObject({ reason: 'chosen', item: { name: 'Bedtime' } });
+
+  now = at(20, 5);
+  expect(logActivity(store, clock, activityId('Journal'))).toMatchObject({ status: 'logged' });
+
+  now = at(20, 10);
+  expect(nowView(readSnapshot(store), now).position)
+    .toMatchObject({ reason: 'stayed', item: { name: 'Bedtime' } });
+});
+
+test('goToSlot records the choice for today without confirming a template', () => {
+  const { store, itemId } = basicDay();
+  const now = at(20, 0);
+  goToSlot(store, () => now, itemId('Bedtime'));
+
+  const snap = readSnapshot(store);
+  expect(snap.days).toEqual([{ day: '2026-10-12', chosenItemId: itemId('Bedtime'), chosenAt: now.getTime() }]);
+  expect(nowView(snap, now).guess.confirmed).toBe(false);
+});
+
+test('goToSlot ignores a fixed step and an unknown id', () => {
+  const { store, templateId, itemId } = basicDay();
+  const now = at(20, 0);
+  const clock = () => now;
+  confirmDay(store, clock, templateId);
+  goToSlot(store, clock, itemId('Post dinner'));
+  const before = readSnapshot(store).days;
+
+  goToSlot(store, clock, itemId('Work'));
+  goToSlot(store, clock, 'no-such-item');
+
+  expect(readSnapshot(store).days).toEqual(before);
+  expect(nowView(readSnapshot(store), now).position)
+    .toMatchObject({ reason: 'chosen', item: { name: 'Post dinner' } });
+});
+
+test('confirming a different template clears a chosen slot that belongs to the old one', () => {
+  const { store, templateId, labelId, itemId } = basicDay();
+  const clock = () => at(18, 0);
+  confirmDay(store, clock, templateId);
+  goToSlot(store, clock, itemId('Bedtime'));
+
+  confirmDay(store, clock, templateId);
+  expect(readSnapshot(store).days[0].chosenItemId).toBe(itemId('Bedtime'));
+
+  const short = createTemplate(store, { name: 'Short', labelId });
+  confirmDay(store, clock, short);
+  expect(readSnapshot(store).days).toEqual([{ day: '2026-10-12', templateId: short }]);
 });
 
 test('undo removes only the latest entry logged today and the day stays confirmed', () => {
-  const { store, templateId, activityId, sectionId } = basicDay();
+  const { store, templateId, activityId, sectionId, itemId } = basicDay();
   let now = at(17, 45);
   const clock = () => now;
-  confirmDay(store, clock, templateId, { activityId: activityId('Gym'), sectionId: sectionId('Post work') });
+  confirmDay(store, clock, templateId, {
+    activityId: activityId('Gym'), sectionId: sectionId('Post work'), itemId: itemId('Post work'),
+  });
 
   now = at(18, 0);
   const walkId = loggedIdOf(logActivity(store, clock, activityId('Walk')));
@@ -110,42 +168,74 @@ test('undo removes only the latest entry logged today and the day stays confirme
 test('undo returns null when nothing was logged today', () => {
   const { store, activityId, sectionId } = basicDay();
   const clock = () => at(17, 45);
-  addPastEntry(store, { activityId: activityId('Gym'), sectionId: sectionId('Post work'), at: at(19, 0, -1) });
+  addPastEntry(store, { activityId: activityId('Gym'), sectionId: sectionId('Post work'), day: '2026-10-11' });
 
   expect(undoLast(store, clock)).toBeNull();
   expect(readSnapshot(store).journal).toHaveLength(1);
 });
 
 test('a log at 00:15 belongs to the previous day, so the template is not asked again', () => {
-  const { store, templateId, activityId, sectionId } = basicDay();
-  // The basic day has no slot at 00:15, so this test adds a late one.
-  addItem(store, templateId, {
-    kind: 'slot', name: 'Late', start: toDayMinutes('23:30'), end: toDayMinutes('00:30'), sectionId: sectionId('Bedtime'),
-  });
+  const { store, templateId, activityId, sectionId, itemId } = basicDay();
   let now = at(17, 45);
   const clock = () => now;
-  confirmDay(store, clock, templateId, { activityId: activityId('Gym'), sectionId: sectionId('Post work') });
+  confirmDay(store, clock, templateId, {
+    activityId: activityId('Gym'), sectionId: sectionId('Post work'), itemId: itemId('Post work'),
+  });
 
   now = at(0, 15, 1);
-  expect(logActivity(store, clock, activityId('Stretch'))).toMatchObject({ status: 'logged' });
+  // Gym was the last log of the 12th, so the next slot is Post dinner.
+  expect(logActivity(store, clock, activityId('Guitar'))).toMatchObject({ status: 'logged' });
   expect(journalByDay(readSnapshot(store)).map(day => [day.day, day.entries.length])).toEqual([['2026-10-12', 2]]);
 });
 
-test('a past entry shows under its own day and can be edited and deleted', () => {
+test('a past entry lands on its day, and a second one on that day comes after the first', () => {
   const { store, activityId, sectionId } = basicDay();
-  const id = addPastEntry(store, { activityId: activityId('Gym'), sectionId: sectionId('Post work'), at: at(19, 30, -3) });
-  expect(journalByDay(readSnapshot(store)).map(day => day.day)).toEqual(['2026-10-09']);
+  const gym = { activityId: activityId('Gym'), sectionId: sectionId('Post work') };
+  const first = addPastEntry(store, { ...gym, day: '2026-10-09', note: 'legs', durationMinutes: 45 });
+  const second = addPastEntry(store, { ...gym, day: '2026-10-09' });
 
-  editEntry(store, id, { at: at(20, 0, -3), note: 'legs', durationMinutes: 45 });
-  expect(readSnapshot(store).journal[0]).toMatchObject({
-    id, loggedAt: at(20, 0, -3).getTime(), note: 'legs', durationMinutes: 45,
+  const days = journalByDay(readSnapshot(store));
+  expect(days.map(day => day.day)).toEqual(['2026-10-09']);
+  expect(days[0].entries.map(entry => entry.id)).toEqual([first, second]);
+  expect(days[0].entries[0].loggedAt).toBe(noonOf('2026-10-09').getTime());
+  expect(days[0].entries[1].loggedAt).toBe(noonOf('2026-10-09').getTime() + 60_000);
+  expect(days[0].entries[0]).toMatchObject({ note: 'legs', durationMinutes: 45 });
+  expect(days[0].entries[0]).not.toHaveProperty('itemId');
+});
+
+test('a past entry for a day comes after that day\'s late-night logs, which belong to the day before', () => {
+  const { store, templateId, activityId, sectionId, itemId } = basicDay();
+  let now = at(17, 45);
+  const clock = () => now;
+  confirmDay(store, clock, templateId, {
+    activityId: activityId('Gym'), sectionId: sectionId('Post work'), itemId: itemId('Post work'),
   });
+  now = at(0, 15, 1);
+  logActivity(store, clock, activityId('Guitar'));
+
+  addPastEntry(store, { activityId: activityId('Walk'), sectionId: sectionId('Post work'), day: '2026-10-12' });
+
+  const [day] = journalByDay(readSnapshot(store));
+  expect(day.day).toBe('2026-10-12');
+  expect(day.entries.at(-1)?.loggedAt).toBe(at(0, 16, 1).getTime());
+});
+
+test('editEntry sets and clears the note and the duration of an entry', () => {
+  const { store, activityId, sectionId } = basicDay();
+  const id = addPastEntry(store, { activityId: activityId('Gym'), sectionId: sectionId('Post work'), day: '2026-10-09' });
+
+  editEntry(store, id, { note: 'legs', durationMinutes: 45 });
+  expect(readSnapshot(store).journal[0]).toMatchObject({ id, note: 'legs', durationMinutes: 45 });
 
   editEntry(store, id, { note: '', durationMinutes: null });
-  const edited = readSnapshot(store).journal[0];
-  expect(edited.note).toBeUndefined();
-  expect(edited.durationMinutes).toBeUndefined();
+  const cleared = readSnapshot(store).journal[0];
+  expect(cleared.note).toBeUndefined();
+  expect(cleared.durationMinutes).toBeUndefined();
+});
 
+test('deleteEntry removes a past entry', () => {
+  const { store, activityId, sectionId } = basicDay();
+  const id = addPastEntry(store, { activityId: activityId('Gym'), sectionId: sectionId('Post work'), day: '2026-10-09' });
   deleteEntry(store, id);
   expect(readSnapshot(store).journal).toEqual([]);
 });

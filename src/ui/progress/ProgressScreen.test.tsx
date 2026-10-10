@@ -33,13 +33,13 @@ function activityId(store: WatodoStore, name: string): Id {
 function lastWeekStore(): WatodoStore {
   const store = finishedStore()
   addPastEntry(store, {
-    activityId: activityId(store, 'Gym'), sectionId: sectionId(store, 'Post work'), at: new Date(2026, 9, 10, 18, 0),
+    activityId: activityId(store, 'Gym'), sectionId: sectionId(store, 'Post work'), day: '2026-10-10',
   })
   addPastEntry(store, {
-    activityId: activityId(store, 'Gym'), sectionId: sectionId(store, 'Post work'), at: new Date(2026, 9, 11, 18, 0),
+    activityId: activityId(store, 'Gym'), sectionId: sectionId(store, 'Post work'), day: '2026-10-11',
   })
   addPastEntry(store, {
-    activityId: activityId(store, 'Read'), sectionId: sectionId(store, 'Bedtime'), at: new Date(2026, 9, 12, 8, 0),
+    activityId: activityId(store, 'Read'), sectionId: sectionId(store, 'Bedtime'), day: '2026-10-12',
   })
   return store
 }
@@ -80,7 +80,7 @@ describe('ProgressScreen', () => {
   test('an entry 40 days ago is counted in 90 days but not in 30', () => {
     const store = finishedStore()
     addPastEntry(store, {
-      activityId: activityId(store, 'Stretch'), sectionId: sectionId(store, 'Bedtime'), at: new Date(2026, 8, 2, 21, 0),
+      activityId: activityId(store, 'Stretch'), sectionId: sectionId(store, 'Bedtime'), day: '2026-09-02',
     })
     renderWithWatodo(<ProgressScreen />, { store, clock: MONDAY_1745 })
 
@@ -93,7 +93,7 @@ describe('ProgressScreen', () => {
   test('7 days leaves out entries older than the last week', () => {
     const store = lastWeekStore()
     addPastEntry(store, {
-      activityId: activityId(store, 'Walk'), sectionId: sectionId(store, 'Post work'), at: new Date(2026, 9, 1, 18, 0),
+      activityId: activityId(store, 'Walk'), sectionId: sectionId(store, 'Post work'), day: '2026-10-01',
     })
     renderWithWatodo(<ProgressScreen />, { store, clock: MONDAY_1745 })
 
@@ -109,10 +109,10 @@ describe('ProgressScreen', () => {
     // 27 days before today is the oldest day in the strip; 28 days before is outside it.
     expect(addDays(today, -27)).toBe('2026-09-15')
     addPastEntry(store, {
-      activityId: activityId(store, 'Walk'), sectionId: sectionId(store, 'Post work'), at: new Date(2026, 8, 15, 18, 0),
+      activityId: activityId(store, 'Walk'), sectionId: sectionId(store, 'Post work'), day: '2026-09-15',
     })
     addPastEntry(store, {
-      activityId: activityId(store, 'Walk'), sectionId: sectionId(store, 'Post work'), at: new Date(2026, 8, 14, 18, 0),
+      activityId: activityId(store, 'Walk'), sectionId: sectionId(store, 'Post work'), day: '2026-09-14',
     })
     renderWithWatodo(<ProgressScreen />, { store, clock: MONDAY_1745 })
 

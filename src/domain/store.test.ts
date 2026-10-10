@@ -47,6 +47,48 @@ test('the snapshot source sees changes that arrive by merge', () => {
   expect(source.get().labels.map(label => label.name)).toEqual(['Weekend']);
 });
 
+test('a journal row can carry the slot it was logged in, and a day row its chosen slot', () => {
+  const { store, activityId, sectionId, itemId } = basicDay();
+  store.setRow('journal', 'entry', {
+    activityId: activityId('Gym'), sectionId: sectionId('Post work'), itemId: itemId('Post work'),
+    loggedAt: at(17, 45).getTime(),
+  });
+  store.setRow('days', '2026-10-12', {
+    templateId: 't', chosenItemId: itemId('Bedtime'), chosenAt: at(20, 0).getTime(),
+  });
+
+  const snap = readSnapshot(store);
+  expect(snap.journal[0]).toMatchObject({ id: 'entry', itemId: itemId('Post work') });
+  expect(snap.days).toEqual([{
+    day: '2026-10-12', templateId: 't', chosenItemId: itemId('Bedtime'), chosenAt: at(20, 0).getTime(),
+  }]);
+});
+
+test('an item row saved with start and end and no position keeps its order as its position', () => {
+  const store = createWatodoStore();
+  store.setRow('items', 'legacy-bedtime', {
+    templateId: 't', kind: 'slot', name: 'Bedtime', start: 1290, end: 1380, sectionId: 's',
+  });
+  store.setRow('items', 'legacy-post-work', {
+    templateId: 't', kind: 'slot', name: 'Post work', start: 1050, end: 1140, sectionId: 's',
+  });
+  store.setRow('items', 'new-wake', { templateId: 't', kind: 'fixed', name: 'Wake', position: 0 });
+
+  const items = readSnapshot(store).items;
+  expect(items.map(({ id, position }) => [id, position])).toEqual([
+    ['new-wake', 0], ['legacy-post-work', 1050], ['legacy-bedtime', 1290],
+  ]);
+  expect(items[1]).toEqual({
+    id: 'legacy-post-work', templateId: 't', kind: 'slot', name: 'Post work', position: 1050, sectionId: 's',
+  });
+});
+
+test('a day row with only the retired earlyItemId reads as a day without it', () => {
+  const store = createWatodoStore();
+  store.setRow('days', '2026-10-12', { earlyItemId: 'some-item' });
+  expect(readSnapshot(store).days).toEqual([{ day: '2026-10-12' }]);
+});
+
 test('readSnapshot skips a journal row that is missing a required cell', () => {
   const { store, activityId, sectionId } = basicDay();
   store.setRow('journal', 'broken', { activityId: activityId('Gym'), sectionId: sectionId('Post work') });
@@ -62,7 +104,7 @@ test('a deleted entry stays deleted after merging both ways', () => {
   const other = createWatodoStore();
   other.merge(first);
 
-  const entryId = addPastEntry(first, { activityId: activityId('Gym'), sectionId: sectionId('Post work'), at: at(19, 0, -1) });
+  const entryId = addPastEntry(first, { activityId: activityId('Gym'), sectionId: sectionId('Post work'), day: '2026-10-11' });
   other.merge(first);
   deleteEntry(first, entryId);
 

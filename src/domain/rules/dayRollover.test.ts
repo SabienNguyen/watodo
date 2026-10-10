@@ -2,11 +2,8 @@ import { describe, expect, test } from 'vitest'
 import {
   DAY_START_MINUTES,
   addDays,
-  dateFromDay,
   dayKeyOf,
-  dayMinutesOf,
-  formatDayMinutes,
-  toDayMinutes,
+  noonOf,
   weekdayOf,
 } from './dayRollover'
 
@@ -15,28 +12,20 @@ describe('day rollover at 04:00', () => {
     expect(DAY_START_MINUTES).toBe(240)
   })
 
-  test('17:45 belongs to the same calendar day at minute 1065', () => {
-    const at = new Date(2026, 9, 12, 17, 45)
-    expect(dayKeyOf(at)).toBe('2026-10-12')
-    expect(dayMinutesOf(at)).toBe(1065)
+  test('17:45 belongs to the same calendar day', () => {
+    expect(dayKeyOf(new Date(2026, 9, 12, 17, 45))).toBe('2026-10-12')
   })
 
-  test('00:15 belongs to the previous calendar day at minute 1455', () => {
-    const at = new Date(2026, 9, 13, 0, 15)
-    expect(dayKeyOf(at)).toBe('2026-10-12')
-    expect(dayMinutesOf(at)).toBe(1455)
+  test('00:15 belongs to the previous calendar day', () => {
+    expect(dayKeyOf(new Date(2026, 9, 13, 0, 15))).toBe('2026-10-12')
   })
 
-  test('03:59 still belongs to the previous day at minute 1679', () => {
-    const at = new Date(2026, 9, 13, 3, 59)
-    expect(dayKeyOf(at)).toBe('2026-10-12')
-    expect(dayMinutesOf(at)).toBe(1679)
+  test('03:59 still belongs to the previous day', () => {
+    expect(dayKeyOf(new Date(2026, 9, 13, 3, 59))).toBe('2026-10-12')
   })
 
-  test('04:00 starts the new day at minute 240', () => {
-    const at = new Date(2026, 9, 13, 4, 0)
-    expect(dayKeyOf(at)).toBe('2026-10-13')
-    expect(dayMinutesOf(at)).toBe(240)
+  test('04:00 starts the new day', () => {
+    expect(dayKeyOf(new Date(2026, 9, 13, 4, 0))).toBe('2026-10-13')
   })
 
   test('00:15 on the 1st belongs to the last day of the previous month', () => {
@@ -64,39 +53,14 @@ describe('addDays', () => {
   })
 })
 
-describe('dateFromDay', () => {
-  test('minute 1065 is 17:45 on that calendar day', () => {
-    expect(dateFromDay('2026-10-12', 1065)).toEqual(new Date(2026, 9, 12, 17, 45))
+describe('noonOf', () => {
+  test('is local 12:00 on that calendar day', () => {
+    expect(noonOf('2026-10-12')).toEqual(new Date(2026, 9, 12, 12, 0))
   })
 
-  test('minute 1455 is 00:15 on the following calendar day', () => {
-    expect(dateFromDay('2026-10-12', 1455)).toEqual(new Date(2026, 9, 13, 0, 15))
-  })
-
-  test('round-trips with dayKeyOf and dayMinutesOf for a 17:45 moment', () => {
-    const at = new Date(2026, 9, 12, 17, 45)
-    expect(dateFromDay(dayKeyOf(at), dayMinutesOf(at))).toEqual(at)
-  })
-
-  test('round-trips with dayKeyOf and dayMinutesOf for a 00:15 moment', () => {
-    const at = new Date(2026, 9, 13, 0, 15)
-    expect(dateFromDay(dayKeyOf(at), dayMinutesOf(at))).toEqual(at)
-  })
-})
-
-describe('hh:mm and day minutes', () => {
-  test('toDayMinutes maps 17:30 to 1050 and 00:30 to 1470', () => {
-    expect(toDayMinutes('17:30')).toBe(1050)
-    expect(toDayMinutes('00:30')).toBe(1470)
-  })
-
-  test('formatDayMinutes maps 1050 to 17:30 and 1470 to 00:30', () => {
-    expect(formatDayMinutes(1050)).toBe('17:30')
-    expect(formatDayMinutes(1470)).toBe('00:30')
-  })
-
-  test('round-trips for 17:30 and 00:30', () => {
-    expect(formatDayMinutes(toDayMinutes('17:30'))).toBe('17:30')
-    expect(formatDayMinutes(toDayMinutes('00:30'))).toBe('00:30')
+  test('round-trips through dayKeyOf', () => {
+    for (const day of ['2026-10-12', '2026-10-01', '2026-02-28', '2026-12-31']) {
+      expect(dayKeyOf(noonOf(day))).toBe(day)
+    }
   })
 })

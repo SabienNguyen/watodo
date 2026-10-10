@@ -2,8 +2,7 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { toast } from 'sonner'
 import {
-  deleteEntry, editEntry, endStepEarly, formatDayMinutes, logActivity, nowView,
-  type Id, type PendingLog, type TemplateItem,
+  deleteEntry, editEntry, goToSlot, logActivity, nowView, type Id, type PendingLog,
 } from '@/domain'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -18,10 +17,6 @@ import { DayPicker } from './DayPicker'
 const AFTER_LOG_MS = 6000
 
 interface NoteTarget { entryId: Id; activityName: string }
-
-function nextLine(next: TemplateItem | null): string {
-  return next ? `Next: ${next.name} at ${formatDayMinutes(next.start)}` : 'Nothing more planned today.'
-}
 
 export function NowScreen() {
   const { store, clock } = useWatodo()
@@ -62,8 +57,7 @@ export function NowScreen() {
     showAfterLog(entryId, activityName)
   }
 
-  const position = view.position
-  const template = view.template
+  const { position, slots, template } = view
 
   return (
     <div className="flex flex-col gap-6">
@@ -80,17 +74,33 @@ export function NowScreen() {
         )}
       </Button>
 
-      {position === null && <p className="text-muted-foreground">No template yet.</p>}
+      {slots.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {slots.map(slot => {
+            const current = slot.id === position?.item.id
+            return (
+              <Button
+                key={slot.id}
+                variant={current ? 'default' : 'outline'}
+                className="shrink-0"
+                aria-pressed={current}
+                onClick={() => goToSlot(store, clock, slot.id)}
+              >
+                {slot.name}
+              </Button>
+            )
+          })}
+        </div>
+      )}
 
-      {position?.kind === 'slot' && (
+      {template === null && <p className="text-muted-foreground">No template yet.</p>}
+      {template !== null && position === null && (
+        <p className="text-muted-foreground">This template has no slots yet. Add one in Edit.</p>
+      )}
+
+      {position !== null && (
         <section className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1">
-            <h2 className="text-xl font-semibold">{position.item.name}</h2>
-            <p className="text-sm text-muted-foreground">
-              {`${formatDayMinutes(position.item.start)} to ${formatDayMinutes(position.item.end)}`}
-            </p>
-            {position.early && <p className="text-sm">Started early</p>}
-          </div>
+          <h2 className="text-xl font-semibold">{position.item.name}</h2>
 
           {view.activities.length === 0 && (
             <p className="text-muted-foreground">No activities in this section yet.</p>
@@ -106,38 +116,6 @@ export function NowScreen() {
               <span className="text-sm text-muted-foreground">{`last: ${lastDoneText(lastDone, now)}`}</span>
             </Button>
           ))}
-        </section>
-      )}
-
-      {position?.kind === 'fixed' && (
-        <section className="flex flex-col gap-3">
-          <p className="text-xl font-semibold">{`Now: ${position.item.name}`}</p>
-          <p className="text-sm text-muted-foreground">{nextLine(position.next)}</p>
-          {position.next && (
-            <Button
-              variant="outline"
-              className="h-14 w-full text-base"
-              onClick={() => endStepEarly(store, clock)}
-            >
-              {`Done with ${position.item.name}`}
-            </Button>
-          )}
-        </section>
-      )}
-
-      {position?.kind === 'gap' && (
-        <section className="flex flex-col gap-3">
-          <p className="text-xl font-semibold">Nothing planned right now.</p>
-          <p className="text-sm text-muted-foreground">{nextLine(position.next)}</p>
-          {position.next && (
-            <Button
-              variant="outline"
-              className="h-14 w-full text-base"
-              onClick={() => endStepEarly(store, clock)}
-            >
-              {`Start ${position.next.name} now`}
-            </Button>
-          )}
         </section>
       )}
 

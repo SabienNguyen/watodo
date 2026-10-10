@@ -4,7 +4,7 @@ import {
 } from './menu';
 import { addPastEntry } from './logging';
 import { readSnapshot } from './store';
-import { at, basicDay } from './testing';
+import { basicDay } from './testing';
 
 test('adding an existing activity name in another section reuses the activity', () => {
   const { store, activityId, sectionId } = basicDay();
@@ -33,7 +33,7 @@ test('listing an activity already in the section adds no second listing', () => 
 
 test('removing an activity from a section keeps its journal entries', () => {
   const { store, activityId, sectionId } = basicDay();
-  addPastEntry(store, { activityId: activityId('Gym'), sectionId: sectionId('Post work'), at: at(19, 0, -1) });
+  addPastEntry(store, { activityId: activityId('Gym'), sectionId: sectionId('Post work'), day: '2026-10-11' });
 
   removeActivityFromSection(store, sectionId('Post work'), activityId('Gym'));
 

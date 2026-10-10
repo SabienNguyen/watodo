@@ -108,6 +108,7 @@ export interface JournalFields {
   activityId: Id;
   sectionId: Id;
   loggedAt: number;
+  itemId?: Id;
   note?: string;
   durationMinutes?: number;
 }
@@ -119,6 +120,7 @@ export function writeJournalRow(store: MergeableStore, fields: JournalFields): I
     sectionId: fields.sectionId,
     loggedAt: fields.loggedAt,
   };
+  if (fields.itemId !== undefined) row.itemId = fields.itemId;
   if (fields.note) row.note = fields.note;
   if (fields.durationMinutes !== undefined) row.durationMinutes = fields.durationMinutes;
   store.setRow(TABLE.journal, id, row);

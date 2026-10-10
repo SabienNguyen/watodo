@@ -17,6 +17,7 @@ test('New template opens the editor, and Done confirms today with it and logs th
   const pending: PendingLog = {
     activityId: snap.activities.find(a => a.name === 'Gym')!.id,
     sectionId: snap.sections.find(s => s.name === 'Post work')!.id,
+    itemId: snap.items.find(i => i.name === 'Post work')!.id,
   }
   const onClose = vi.fn()
   const onDone = vi.fn()

@@ -1,11 +1,9 @@
 import { describe, expect, test } from 'vitest'
-import { toDayMinutes } from './dayRollover'
 import { dotStrip, fullDayView, journalByDay, nowView, progress, sectionActivities } from './views'
 import type {
   Activity, DayRecord, JournalEntry, Listing, Section, Snapshot, TemplateItem,
 } from './types'
 
-const t = toDayMinutes
 const at = (year: number, month: number, day: number, hours: number, minutes: number) =>
   new Date(year, month, day, hours, minutes)
 const OCT = 9 // monthIndex for October
@@ -38,13 +36,21 @@ const listings: Listing[] = [
   { sectionId: 'bedtime', activityId: 'read', position: 2 },
 ]
 
-const wake: TemplateItem = { id: 'wake', templateId: 'basic', kind: 'fixed', name: 'Wake up', start: t('06:30'), end: t('08:30') }
-const work: TemplateItem = { id: 'work', templateId: 'basic', kind: 'fixed', name: 'Work', start: t('09:00'), end: t('17:30') }
-const postWork: TemplateItem = { id: 'postWork', templateId: 'basic', kind: 'slot', name: 'Post work', start: t('17:30'), end: t('19:00'), sectionId: 'postWork' }
-const dinner: TemplateItem = { id: 'dinner', templateId: 'basic', kind: 'fixed', name: 'Dinner', start: t('19:00'), end: t('19:30') }
-const postDinner: TemplateItem = { id: 'postDinner', templateId: 'basic', kind: 'slot', name: 'Post dinner', start: t('19:30'), end: t('21:30'), sectionId: 'postDinner' }
-const bedtime: TemplateItem = { id: 'bedtime', templateId: 'basic', kind: 'slot', name: 'Bedtime', start: t('21:30'), end: t('23:00'), sectionId: 'bedtime' }
-const nightSnack: TemplateItem = { id: 'nightSnack', templateId: 'late', kind: 'slot', name: 'Night snack', start: t('00:00'), end: t('01:00'), sectionId: 'bedtime' }
+function fixed(id: string, position: number, name: string, templateId = 'basic'): TemplateItem {
+  return { id, templateId, kind: 'fixed', name, position }
+}
+
+function slot(id: string, position: number, name: string, sectionId: string, templateId = 'basic'): TemplateItem {
+  return { id, templateId, kind: 'slot', name, position, sectionId }
+}
+
+const wake = fixed('wake', 0, 'Wake up')
+const work = fixed('work', 1, 'Work')
+const postWork = slot('postWork', 2, 'Post work', 'postWork')
+const dinner = fixed('dinner', 3, 'Dinner')
+const postDinner = slot('postDinner', 4, 'Post dinner', 'postDinner')
+const bedtime = slot('bedtime', 5, 'Bedtime', 'bedtime')
+const nightSnack = slot('nightSnack', 0, 'Night snack', 'bedtime', 'late')
 
 const basicItems = [wake, work, postWork, dinner, postDinner, bedtime]
 
@@ -66,63 +72,89 @@ function fixture(parts: Partial<Snapshot> = {}): Snapshot {
   }
 }
 
-function entry(id: string, activityId: string, sectionId: string, loggedAt: Date): JournalEntry {
-  return { id, activityId, sectionId, loggedAt: loggedAt.getTime() }
+function entry(id: string, activityId: string, sectionId: string, loggedAt: Date, itemId?: string): JournalEntry {
+  return { id, activityId, sectionId, loggedAt: loggedAt.getTime(), itemId }
 }
 
 describe('nowView', () => {
-  test('in a slot, lists that section activities in position order with lastDone', () => {
+  test('lists the day slots, and with nothing logged today the first slot with its section activities', () => {
     const journal = [
-      entry('gymDone', 'gym', 'postWork', at(2026, OCT, 9, 18, 0)),
+      entry('gymLast', 'gym', 'postWork', at(2026, OCT, 9, 18, 0)),
       entry('readBedtime', 'read', 'bedtime', at(2026, OCT, 11, 21, 0)),
       entry('readDinner', 'read', 'postDinner', at(2026, OCT, 5, 19, 40)),
     ]
     const view = nowView(fixture({ journal }), at(2026, OCT, 12, 18, 0))
 
     expect(view.day).toBe('2026-10-12')
-    expect(view.minutes).toBe(1080)
     expect(view.template?.id).toBe('basic')
-    expect(view.position).toEqual({ kind: 'slot', item: postWork, early: false })
+    expect(view.slots.map(s => s.id)).toEqual(['postWork', 'postDinner', 'bedtime'])
+    expect(view.position).toEqual({ item: postWork, reason: 'first' })
     expect(view.activities.map(a => [a.activity.name, a.lastDone?.id ?? null])).toEqual([
-      ['Gym', 'gymDone'],
+      ['Gym', 'gymLast'],
       ['Walk', null],
       ['Read', 'readBedtime'],
     ])
   })
 
-  test('in a fixed step, activities are empty and the next slot is reported', () => {
-    const view = nowView(fixture(), at(2026, OCT, 12, 10, 0))
-    expect(view.position).toEqual({ kind: 'fixed', item: work, next: postWork })
-    expect(view.activities).toEqual([])
+  test('a log more than an hour old moves on: the next slot and its activities', () => {
+    const journal = [
+      entry('readBedtime', 'read', 'bedtime', at(2026, OCT, 11, 21, 0)),
+      entry('gymToday', 'gym', 'postWork', at(2026, OCT, 12, 16, 30), 'postWork'),
+    ]
+    const view = nowView(fixture({ journal }), at(2026, OCT, 12, 18, 0))
+
+    expect(view.position).toEqual({ item: postDinner, reason: 'advanced' })
+    expect(view.activities.map(a => [a.activity.name, a.lastDone?.id ?? null])).toEqual([
+      ['Guitar', null],
+      ['Call family', null],
+      ['Read', 'readBedtime'],
+    ])
   })
 
-  test('at 00:15 still belongs to the previous day and uses that day record', () => {
-    const days: DayRecord[] = [{ day: '2026-10-12', templateId: 'late' }]
-    const view = nowView(fixture({ days }), at(2026, OCT, 13, 0, 15))
+  test('a log at 00:15 belongs to the previous day, so a 00:30 view is that day\'s position', () => {
+    const days: DayRecord[] = [{ day: '2026-10-12', templateId: 'basic' }]
+    const journal = [entry('lateLog', 'read', 'bedtime', at(2026, OCT, 13, 0, 15))]
+    const view = nowView(fixture({ journal, days }), at(2026, OCT, 13, 0, 30))
 
     expect(view.day).toBe('2026-10-12')
-    expect(view.minutes).toBe(1455)
-    expect(view.template?.id).toBe('late')
-    expect(view.position).toEqual({ kind: 'slot', item: nightSnack, early: false })
+    expect(view.position).toEqual({ item: bedtime, reason: 'stayed' })
+    expect(view.activities.map(a => [a.activity.name, a.lastDone?.id ?? null])).toEqual([
+      ['Journal', null],
+      ['Stretch', null],
+      ['Read', 'lateLog'],
+    ])
+  })
+
+  test('a slot chosen by hand today is the position', () => {
+    const days: DayRecord[] = [
+      { day: '2026-10-12', templateId: 'basic', chosenItemId: 'bedtime', chosenAt: at(2026, OCT, 12, 17, 0).getTime() },
+    ]
+    const view = nowView(fixture({ days }), at(2026, OCT, 12, 18, 0))
+
+    expect(view.position).toEqual({ item: bedtime, reason: 'chosen' })
     expect(view.activities.map(a => a.activity.name)).toEqual(['Journal', 'Stretch', 'Read'])
   })
 
-  test("uses the day record's early jump", () => {
-    const days: DayRecord[] = [{ day: '2026-10-12', templateId: 'basic', earlyItemId: 'bedtime' }]
-    const view = nowView(fixture({ days }), at(2026, OCT, 12, 20, 0))
-    expect(view.position).toEqual({ kind: 'slot', item: bedtime, early: true })
+  test('a template with no slots has no position and no activities', () => {
+    const view = nowView(fixture({ items: [wake, work, dinner] }), at(2026, OCT, 12, 18, 0))
+
+    expect(view.template?.id).toBe('basic')
+    expect(view.slots).toEqual([])
+    expect(view.position).toBeNull()
+    expect(view.activities).toEqual([])
   })
 
-  test('with no template, position is null and there are no activities', () => {
+  test('with no template, there are no slots, no position and no activities', () => {
     const view = nowView(fixture({ labels: [], templates: [], defaultTemplateId: null }), at(2026, OCT, 12, 18, 0))
     expect(view.template).toBeNull()
+    expect(view.slots).toEqual([])
     expect(view.position).toBeNull()
     expect(view.activities).toEqual([])
   })
 })
 
 describe('fullDayView', () => {
-  test('marks the current item and lists activities for slots only', () => {
+  test('marks only the current slot, lists activities for slots only', () => {
     const view = fullDayView(fixture(), at(2026, OCT, 12, 18, 0))
 
     expect(view.template?.id).toBe('basic')
@@ -139,14 +171,15 @@ describe('fullDayView', () => {
     expect(view.items[4].activities.map(a => a.name)).toEqual(['Guitar', 'Call family', 'Read'])
   })
 
-  test('the early-jumped slot is the current item', () => {
-    const days: DayRecord[] = [{ day: '2026-10-12', templateId: 'basic', earlyItemId: 'bedtime' }]
-    const view = fullDayView(fixture({ days }), at(2026, OCT, 12, 20, 0))
-    expect(view.items.find(i => i.current)?.item.id).toBe('bedtime')
+  test('the slot the day has moved on to is the current one', () => {
+    const journal = [entry('gymToday', 'gym', 'postWork', at(2026, OCT, 12, 16, 30), 'postWork')]
+    const view = fullDayView(fixture({ journal }), at(2026, OCT, 12, 18, 0))
+    expect(view.items.filter(i => i.current).map(i => i.item.id)).toEqual(['postDinner'])
   })
 
-  test('no item is current during a gap', () => {
-    const view = fullDayView(fixture(), at(2026, OCT, 12, 8, 45))
+  test('a template with no slots marks nothing as current', () => {
+    const view = fullDayView(fixture({ items: [wake, work, dinner] }), at(2026, OCT, 12, 18, 0))
+    expect(view.items.map(i => i.item.id)).toEqual(['wake', 'work', 'dinner'])
     expect(view.items.some(i => i.current)).toBe(false)
   })
 

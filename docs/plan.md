@@ -223,3 +223,142 @@ Implement `src/domain/` (`clock.ts`, `store.ts`, `setup.ts`, `logging.ts`, `menu
 
 ### Task 6: Journal, Full day, Progress
 `JournalScreen`, `FullDayScreen`, `ProgressScreen` per the spec.
+
+---
+
+# Change 1: no times in templates or on screen
+
+Decided after phase 1 shipped. Templates lose their time windows, the app never shows a clock time, and the current slot is worked out from what the user last did. See the updated `docs/spec.md` ("Which slot you are in"). The contracts below replace the matching ones above; anything not mentioned is unchanged.
+
+## Changed contracts
+
+### `src/domain/rules/types.ts`
+```ts
+export interface TemplateItem {
+  id: Id; templateId: Id; kind: 'fixed' | 'slot'; name: string;
+  position: number; sectionId?: Id; // sectionId only on slots. No start/end.
+}
+export interface JournalEntry {
+  id: Id; activityId: Id; sectionId: Id; loggedAt: number; // epoch ms, recorded but never shown
+  itemId?: Id;                     // the slot it was logged in, when known
+  note?: string; durationMinutes?: number;
+}
+/** One row per day that has been touched. Confirmed means templateId is set. */
+export interface DayRecord {
+  day: DayKey; templateId?: Id; note?: string;
+  chosenItemId?: Id; chosenAt?: number; // a slot picked by hand, and when (epoch ms)
+}
+```
+`DayMinutes` and `DayRecord.earlyItemId` are removed. `Snapshot.items` is sorted by `position`.
+
+### `src/domain/rules/dayRollover.ts`
+```ts
+export const DAY_START_MINUTES = 240;
+export function dayKeyOf(at: Date): DayKey;
+export function weekdayOf(day: DayKey): number;
+export function addDays(day: DayKey, n: number): DayKey;
+export function noonOf(day: DayKey): Date;   // local 12:00 on that calendar day; a moment that is safely inside the day
+```
+Removed: `dayMinutesOf`, `dateFromDay`, `toDayMinutes`, `formatDayMinutes`.
+
+### `src/domain/rules/currentSlot.ts`
+```ts
+export const STAY_MS = 60 * 60 * 1000;
+export interface Position { item: TemplateItem; reason: 'chosen' | 'stayed' | 'advanced' | 'first' }
+export function itemsOf(snap: Snapshot, templateId: Id): TemplateItem[];   // sorted by position
+export function slotsOf(items: TemplateItem[]): TemplateItem[];            // the slots, in order
+export function positionAt(
+  items: TemplateItem[], todaysEntries: JournalEntry[], record: DayRecord | undefined, at: Date,
+): Position | null;                                                         // null when the template has no slots
+```
+`positionAt`, with `slots = slotsOf(items)`:
+- The entry's slot is the slot whose `id` equals `entry.itemId`; if there is no such slot, the first slot whose `sectionId` equals `entry.sectionId`; if neither, the entry is ignored. `lastLog` is the considered entry with the greatest `loggedAt`.
+- `chosen` is the slot whose `id` equals `record.chosenItemId`, when it exists.
+1. `chosen` exists and (`lastLog` is absent or `record.chosenAt > lastLog.loggedAt`) -> that slot, `reason: 'chosen'`.
+2. `lastLog` exists: if `at.getTime() - lastLog.loggedAt < STAY_MS` -> its slot, `'stayed'`; otherwise the slot after it in `slots` (or the same slot when it is the last), `'advanced'`.
+3. Otherwise the first slot, `'first'`.
+
+### `src/domain/rules/views.ts`
+```ts
+export interface NowView {
+  day: DayKey;
+  guess: TemplateGuess; template: Template | null;
+  slots: TemplateItem[];                 // today's slots in order; empty when there is no template
+  position: Position | null;             // null when there is no template or it has no slots
+  activities: { activity: Activity; lastDone: JournalEntry | null }[]; // of the current slot's section
+}
+export interface FullDayView {
+  template: Template | null;
+  items: { item: TemplateItem; current: boolean; activities: Activity[] }[];
+}
+```
+`nowView(snap, at)` passes `positionAt` the entries whose `dayKeyOf(new Date(loggedAt))` equals `dayKeyOf(at)`, and that day's `DayRecord`. `NowView.minutes` is removed. `fullDayView` marks the current slot. `journalByDay`, `progress`, `dotStrip`, `sectionActivities` keep their signatures.
+
+### `src/domain/logging.ts`
+```ts
+export interface PendingLog { activityId: Id; sectionId: Id; itemId: Id }
+export function goToSlot(store: WatodoStore, clock: Clock, itemId: Id): void;  // sets today's chosenItemId and chosenAt = clock().getTime()
+export function addPastEntry(store: WatodoStore, input: { activityId: Id; sectionId: Id; day: DayKey; note?: string; durationMinutes?: number }): Id;
+export function editEntry(store: WatodoStore, entryId: Id, patch: { note?: string; durationMinutes?: number | null }): void;
+```
+Removed: `endStepEarly`. `logActivity` and a logged `pending` write `itemId` on the journal row. `confirmDay` clears `chosenItemId`/`chosenAt` when the chosen item is not in the confirmed template. `addPastEntry` sets `loggedAt` to one minute after that day's latest existing entry, or `noonOf(day)` when the day has none, so entries keep the order they were added.
+
+### `src/domain/templates.ts`
+```ts
+export function addItem(store: WatodoStore, templateId: Id, item: { kind: 'fixed' | 'slot'; name: string; sectionId?: Id }): Id; // appended last
+export function updateItem(store: WatodoStore, itemId: Id, patch: Partial<{ kind: 'fixed' | 'slot'; name: string; sectionId: Id | null }>): void;
+export function moveItem(store: WatodoStore, itemId: Id, direction: 'up' | 'down'): void; // swaps position with its neighbour in the same template; no-op at either end
+```
+The basic day keeps the same six items in the same order, without times.
+
+### Stored data
+Item rows store `position` instead of `start`/`end`. When reading, an item row with no `position` cell but a numeric `start` cell (data saved before this change) uses `start` as its position, so existing templates keep their order. Day rows no longer use `earlyItemId`; ignore it if present.
+
+### `src/ui/format.ts`
+```ts
+export function lastDoneText(entry: JournalEntry | null, now: Date): string; // 'never' | 'today' | 'yesterday' | 'N days ago'
+export function dayLabel(day: DayKey): string;
+```
+Removed: `timeOf`.
+
+## Tasks
+
+### Task 7: rules without times
+Update `src/domain/rules/` to the changed contracts, with tests.
+
+### Task 8: domain without times
+Update `src/domain/` (store, schema, logging, templates, basic day) to the changed contracts, with tests.
+
+### Task 9: screens without times
+Update `src/ui/` to the changed contracts and the updated spec: NowScreen (slot row, no fixed-step or gap states), FullDayScreen, JournalScreen, TemplateEditor, format, and their tests.
+
+---
+
+# Change 2: full day folds into the Now screen
+
+The Day tab is removed. The full day view becomes an expandable part of the Now screen, as the original design notes described it (a default view of choices and a "Full day" view of everything).
+
+## Changed contracts
+```tsx
+// src/ui/now/FullDay.tsx  (replaces src/ui/day/FullDayScreen.tsx, which is deleted along with its folder)
+export function FullDay(): JSX.Element;   // the numbered list of today's items; no heading, no toggle
+```
+`src/App.tsx` tabs, in order: `Now`, `Journal`, `Progress`, `Edit`.
+
+### Task 10: fold the full day into Now
+Move the full day list into `src/ui/now/FullDay.tsx`, show it from NowScreen behind a `Show full day` / `Hide full day` button, and remove the Day tab.
+
+---
+
+# Change 3: the full day belongs in the Journal, not the Now screen
+
+Correction to Change 2: the user wanted the full day folded into the Journal screen.
+
+## Changed contracts
+```tsx
+// src/ui/journal/FullDay.tsx  (moved from src/ui/now/FullDay.tsx; same component, same behaviour)
+export function FullDay(): JSX.Element;
+```
+
+### Task 11: move the full day toggle to the Journal
+Remove the `Show full day` button and `<FullDay />` from NowScreen. Move `FullDay` and its test to `src/ui/journal/`. In JournalScreen, today's section gets the `Show full day` / `Hide full day` button.

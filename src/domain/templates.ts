@@ -1,8 +1,8 @@
-import type { DayMinutes, Id } from './rules';
-import type { WatodoStore } from './store';
+import { itemsOf, type Id } from './rules';
+import { readSnapshot, type WatodoStore } from './store';
 import { addBasicDayTemplate } from './basicDay';
 import {
-  defaultTemplateIsValid, deleteTemplateRows, encodeWeekdays, itemIdsOf, newId, nextPosition,
+  defaultTemplateIsValid, deleteTemplateRows, encodeWeekdays, newId, nextPosition,
   templateExists, TABLE, VALUE,
 } from './schema';
 
@@ -35,8 +35,14 @@ export function deleteLabel(store: WatodoStore, id: Id): boolean {
 }
 
 function copyItems(store: WatodoStore, fromTemplateId: Id, toTemplateId: Id): void {
-  for (const itemId of itemIdsOf(store, fromTemplateId)) {
-    store.setRow(TABLE.items, newId(), { ...store.getRow(TABLE.items, itemId), templateId: toTemplateId });
+  for (const item of itemsOf(readSnapshot(store), fromTemplateId)) {
+    store.setRow(TABLE.items, newId(), {
+      templateId: toTemplateId,
+      kind: item.kind,
+      name: item.name,
+      position: item.position,
+      ...(item.sectionId === undefined ? {} : { sectionId: item.sectionId }),
+    });
   }
 }
 
@@ -104,18 +110,19 @@ export function deleteTemplate(store: WatodoStore, id: Id, newDefaultId?: Id): D
   });
 }
 
+/** Appends the item after the template's last one. */
 export function addItem(
   store: WatodoStore,
   templateId: Id,
-  item: { kind: 'fixed' | 'slot'; name: string; start: DayMinutes; end: DayMinutes; sectionId?: Id },
+  item: { kind: 'fixed' | 'slot'; name: string; sectionId?: Id },
 ): Id {
+  const highest = Math.max(-1, ...itemsOf(readSnapshot(store), templateId).map(existing => existing.position));
   const id = newId();
   store.setRow(TABLE.items, id, {
     templateId,
     kind: item.kind,
     name: item.name.trim(),
-    start: item.start,
-    end: item.end,
+    position: highest + 1,
     ...(item.kind === 'slot' && item.sectionId !== undefined ? { sectionId: item.sectionId } : {}),
   });
   return id;
@@ -124,14 +131,12 @@ export function addItem(
 export function updateItem(
   store: WatodoStore,
   itemId: Id,
-  patch: Partial<{ kind: 'fixed' | 'slot'; name: string; start: DayMinutes; end: DayMinutes; sectionId: Id | null }>,
+  patch: Partial<{ kind: 'fixed' | 'slot'; name: string; sectionId: Id | null }>,
 ): void {
   if (!store.hasRow(TABLE.items, itemId)) return;
   store.transaction(() => {
     if (patch.kind !== undefined) store.setCell(TABLE.items, itemId, 'kind', patch.kind);
     if (patch.name !== undefined) store.setCell(TABLE.items, itemId, 'name', patch.name.trim());
-    if (patch.start !== undefined) store.setCell(TABLE.items, itemId, 'start', patch.start);
-    if (patch.end !== undefined) store.setCell(TABLE.items, itemId, 'end', patch.end);
     if (patch.sectionId === null) {
       store.delCell(TABLE.items, itemId, 'sectionId');
     } else if (patch.sectionId !== undefined) {
@@ -141,6 +146,21 @@ export function updateItem(
     if (store.getCell(TABLE.items, itemId, 'kind') === 'fixed') {
       store.delCell(TABLE.items, itemId, 'sectionId');
     }
+  });
+}
+
+/** Swaps the item's position with its neighbour in the same template. Does nothing at either end. */
+export function moveItem(store: WatodoStore, itemId: Id, direction: 'up' | 'down'): void {
+  const snap = readSnapshot(store);
+  const item = snap.items.find(candidate => candidate.id === itemId);
+  if (item === undefined) return;
+  const siblings = itemsOf(snap, item.templateId);
+  const index = siblings.findIndex(candidate => candidate.id === itemId);
+  const neighbour = siblings[direction === 'up' ? index - 1 : index + 1];
+  if (neighbour === undefined) return;
+  store.transaction(() => {
+    store.setCell(TABLE.items, item.id, 'position', neighbour.position);
+    store.setCell(TABLE.items, neighbour.id, 'position', item.position);
   });
 }
 

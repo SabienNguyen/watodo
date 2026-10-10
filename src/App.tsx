@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/sonner'
 import { useSnapshot, useWatodo } from '@/ui/hooks'
 import { NowScreen } from '@/ui/now/NowScreen'
-import { FullDayScreen } from '@/ui/day/FullDayScreen'
 import { JournalScreen } from '@/ui/journal/JournalScreen'
 import { ProgressScreen } from '@/ui/progress/ProgressScreen'
 import { EditScreen } from '@/ui/edit/EditScreen'
@@ -13,7 +12,6 @@ import { Tutorial } from '@/ui/tutorial/Tutorial'
 
 const SCREENS = {
   Now: NowScreen,
-  Day: FullDayScreen,
   Journal: JournalScreen,
   Progress: ProgressScreen,
   Edit: EditScreen,
@@ -50,7 +48,7 @@ export default function App() {
         <Screen />
       </main>
       <nav aria-label="Main" className="fixed inset-x-0 bottom-0 border-t bg-background">
-        <div className="mx-auto grid max-w-[28rem] grid-cols-5">
+        <div className="mx-auto grid max-w-[28rem] grid-cols-4">
           {TABS.map(name => (
             <Button
               key={name}
