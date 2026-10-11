@@ -21,7 +21,7 @@ TypeScript, React + Vite, Tailwind, shadcn/ui, TinyBase (`MergeableStore`, saved
 
 ## Quick and committed activities
 
-Borrowed from Persona 5 Royal's time slots: some things you do use up the slot, others do not.
+Some things you do use up the slot they are done in; others do not.
 
 - Every activity is **quick** or **committed**. New and existing activities are quick. The kind belongs to the activity, so it is the same in every slot that lists it. It is set in the slot's editing view.
 - Tapping a **quick** activity logs it at once, as before. The slot stays open.
