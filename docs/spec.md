@@ -72,6 +72,19 @@ Rules for the code:
 - Rules never read the system clock; the time is passed in.
 - `src/ui` imports from `@/domain` only (its `index.ts`), never from `tinybase`.
 
-## Out of scope for phase 1
+## Phase 2: hub, sync and the phone
 
-Sync, hub, Tailscale, phone install, Electron, "Pick one for me", a sync status indicator, tracking fixed steps.
+watodo runs on the computer and the iPhone and keeps both in step, with no cloud service holding the data.
+
+- **Hub**: a small Node program on the computer. It serves the built app over HTTP and runs TinyBase's WebSocket sync server at `/sync/watodo`. It keeps its own copy of the data in one JSON file in the user's data directory, so a device can sync even when the other device is off. It listens on `127.0.0.1` only; Tailscale Serve puts it on the user's private network over HTTPS. It starts at login as a systemd user service.
+- **Sync**: each device still saves locally first (browser storage). When the hub is reachable the app connects and the two copies merge; when it is not, the app keeps working and reconnects by itself. There is no sync status indicator.
+- **First launch on a second device**: the app loads from the hub, so it waits briefly for the first sync before deciding. If the hub already has a set-up day, the tutorial is skipped and the data appears. If the hub is empty, the tutorial runs.
+- **Phone**: a home-screen web app. It has a manifest and icons, opens standalone, and a service worker keeps the app itself available when the hub cannot be reached. The app asks the browser to keep its storage.
+- **Clocks**: sync relies on the devices' clocks roughly agreeing. On connecting, the app compares its clock with the hub's and shows a warning bar when they differ by more than two minutes.
+- **Demo mode** stays development-only and never syncs.
+
+Not in phase 2: Electron, a sync status indicator, sync between devices without the hub, user accounts.
+
+## Out of scope for phase 1 and 2
+
+Electron, "Pick one for me", a sync status indicator, tracking fixed steps.

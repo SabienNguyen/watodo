@@ -550,3 +550,66 @@ export function entrySlotName(snap: Snapshot, entry: JournalEntry): string;
 
 ### Task 19: number repeated slots
 Implement the contracts above and show the numbered names on the Now screen, in the full day list and on journal entries.
+
+---
+
+# Phase 2: hub, sync and the phone
+
+Spec: the "Phase 2" section of `docs/spec.md`. Facts below were verified on this machine with a scratch script (Node v26.4.0, tinybase 10.0.1, ws 8):
+- `node file.ts` runs TypeScript directly when it uses only erasable syntax; relative imports need the `.ts` extension.
+- `createWsServer` from `tinybase/synchronizers/synchronizer-ws-server` works with `new WebSocketServer({ noServer: true })` attached to a `node:http` server through its `upgrade` event; the path id is the URL path without the leading slash (`/sync/watodo` gives `sync/watodo`).
+- `createFilePersister` from `tinybase/persisters/persister-file` persists the hub's `MergeableStore`; data survives a hub restart.
+- A browser-side `createWsSynchronizer(store, webSocket)` from `tinybase/synchronizers/synchronizer-ws-client` has the hub's data by the time `await startSync()` resolves.
+- After a dropped connection, destroying the old synchronizer and creating a new socket and a new synchronizer on the same store resumes syncing, including edits made while offline. No reconnect library is needed.
+
+## Contracts
+
+### `hub/server.ts`
+```ts
+export interface HubOptions { port: number; host?: string; dataDir: string; staticDir: string }
+export interface Hub { port: number; close(): Promise<void> }
+export const SYNC_PATH = '/sync/watodo';
+export function startHub(options: HubOptions): Promise<Hub>;
+```
+- `host` defaults to `127.0.0.1`. `port: 0` picks a free port; `Hub.port` is the real one.
+- HTTP `GET`/`HEAD`: files from `staticDir`, with content types for html, js, css, json, webmanifest, svg, png, ico, woff2, txt. A path with no file extension that matches no file gets `index.html` (the app is a single page). Any path that escapes `staticDir` gets 403/404, never a file outside it. `index.html`, `sw.js` and `*.webmanifest` are sent with `Cache-Control: no-cache`; files under `/assets/` with `Cache-Control: public, max-age=31536000, immutable`.
+- `GET /hub/time` returns JSON `{ "now": <epoch milliseconds> }` with `Cache-Control: no-store`.
+- WebSocket upgrades are accepted only on exactly `SYNC_PATH`; any other upgrade is refused. The sync server persists to `<dataDir>/watodo.json` (creating `dataDir` if needed).
+- Running the file directly (`node hub/server.ts`) starts a hub with `WATODO_PORT` (default 4780), `WATODO_DATA_DIR` (default `$XDG_DATA_HOME/watodo`, else `~/.local/share/watodo`) and `WATODO_STATIC_DIR` (default the repo's `dist/`), prints the address, and shuts down cleanly on SIGINT and SIGTERM. Importing the file does not start anything.
+- Erasable TypeScript only (no enums, namespaces or parameter properties); relative imports carry `.ts`.
+
+### `src/sync/hub.ts`
+```ts
+export interface HubConnection {
+  firstSync: Promise<boolean>;   // true once the first sync with the hub has completed; false if it did not within firstSyncTimeoutMs
+  stop(): void;                  // stop syncing and stop reconnecting
+}
+export function hubSyncUrl(location: { protocol: string; host: string }): string; // 'https:' + 'h' -> 'wss://h/sync/watodo'; 'http:' -> 'ws://…'
+export function connectToHub(store: WatodoStore, options: {
+  url: string;
+  firstSyncTimeoutMs?: number;   // default 2500
+  retryMs?: number;              // first retry delay, default 2000, doubling up to 15000
+  createSocket?: (url: string) => WebSocket; // default: the global WebSocket
+}): HubConnection;
+```
+`connectToHub` never throws and never rejects: with no hub it keeps retrying quietly. Each attempt uses a new socket and a new synchronizer on the same store; when the socket closes or errors, the synchronizer is destroyed and a retry is scheduled. It also retries at once when the browser fires `online` or the page becomes visible.
+
+### `src/sync/clock.ts`
+```ts
+export function clockSkewMs(fetchImpl?: typeof fetch): Promise<number | null>; // device time minus hub time, from GET /hub/time; null when unreachable
+export const CLOCK_WARNING_MS = 120_000;
+```
+
+## Tasks
+
+### Task 20: the hub
+`hub/server.ts` as in the contract, with tests, the `ws` dependency, and npm scripts `hub` (`node hub/server.ts`) and `serve` (`npm run build && npm run hub`).
+
+### Task 21: sync from the app
+`src/sync/hub.ts` and `src/sync/clock.ts` as in the contracts, with tests against a real hub; start-up wiring in `src/main.tsx`; the dev-server proxy.
+
+### Task 22: installable on the phone
+Web app manifest, icons, iOS tags, a service worker for offline loading, safe-area spacing.
+
+### Task 23: setup
+A systemd user service for the hub and a guided setup script for Tailscale and the phone.

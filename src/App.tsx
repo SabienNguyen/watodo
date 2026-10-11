@@ -20,8 +20,8 @@ const SCREENS = {
 type Tab = keyof typeof SCREENS
 const TABS = Object.keys(SCREENS) as Tab[]
 
-// The tab bar is 3.5rem tall; keep toasts 4.5rem up so they sit just above it.
-const TOAST_OFFSET = { bottom: '4.5rem' }
+// The tab bar is 3.5rem tall plus the bottom safe-area inset (the iPhone home indicator); keep toasts 4.5rem up so they sit just above it.
+const TOAST_OFFSET = { bottom: 'calc(4.5rem + env(safe-area-inset-bottom))' }
 
 export default function App() {
   const { store } = useWatodo()
@@ -31,7 +31,7 @@ export default function App() {
 
   if (setupState(store) !== 'done') {
     return (
-      <div className="mx-auto flex min-h-svh w-full max-w-[28rem] flex-col gap-6 p-4">
+      <div className="mx-auto flex min-h-svh w-full max-w-[28rem] flex-col gap-6 px-4 pt-[calc(1rem+env(safe-area-inset-top))] pb-[calc(1rem+env(safe-area-inset-bottom))]">
         <h1 className="text-sm font-medium text-muted-foreground">watodo</h1>
         <Tutorial />
       </div>
@@ -40,14 +40,14 @@ export default function App() {
 
   const Screen = SCREENS[tab]
   return (
-    <div className="mx-auto flex min-h-svh w-full max-w-[28rem] flex-col">
+    <div className="mx-auto flex min-h-svh w-full max-w-[28rem] flex-col pt-[env(safe-area-inset-top)]">
       <header className="px-4 pt-4">
         <h1 className="text-sm font-medium text-muted-foreground">watodo</h1>
       </header>
-      <main className="flex-1 p-4 pb-24">
+      <main className="flex-1 p-4 pb-[calc(6rem+env(safe-area-inset-bottom))]">
         <Screen />
       </main>
-      <nav aria-label="Main" className="fixed inset-x-0 bottom-0 border-t bg-background">
+      <nav aria-label="Main" className="fixed inset-x-0 bottom-0 border-t bg-background pb-[env(safe-area-inset-bottom)]">
         <div className="mx-auto grid max-w-[28rem] grid-cols-4">
           {TABS.map(name => (
             <Button
