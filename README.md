@@ -2,18 +2,18 @@
 
 **What to do, right now**
 
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;In theory, things like deep work, routines, and weekly planning boost productivity, protect mental
-health, and reduce burnout. Now, for various reasons, these lifestyles do not work for most people.
-People desire to create a routine that focuses on things that they want to do, such as hobbies or
-passion projects. The issue with this mentality is that it makes the mundane parts of your routine
-the enemy.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;In theory, things like deep work, routines, and weekly planning
+boost productivity, protect mental health, and reduce burnout. Now, for various reasons, these
+lifestyles do not work for most people. People desire to create a routine that focuses on things
+that they want to do, such as hobbies or passion projects. The issue with this mentality is that it
+makes the mundane parts of your routine the enemy.
 
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;There is an urge to blame these things because parts of an average person's routine might include
-work, school, traffic, and other things that people do not consider the "fuel" for an exciting life.
-Moreover, systems that use schedules that revolve around time blocks fall apart from a lack of
-adaptability. I propose a system that lives between the impulsive actor and to-the-minute planning.
-This system encourages people to implement routines in their lives centered around the mundane and
-repetitive parts of their schedules.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;There is an urge to blame these things because parts of an
+average person's routine might include work, school, traffic, and other things that people do not
+consider the "fuel" for an exciting life. Moreover, systems that use schedules that revolve around
+time blocks fall apart from a lack of adaptability. I propose a system that lives between the
+impulsive actor and to-the-minute planning. This system encourages people to implement routines in
+their lives centered around the mundane and repetitive parts of their schedules.
 
 ## The goal
 
