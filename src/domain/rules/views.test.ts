@@ -23,13 +23,13 @@ const sections: Section[] = [
 ]
 
 const activities: Activity[] = [
-  { id: 'gym', name: 'Gym' },
-  { id: 'walk', name: 'Walk' },
-  { id: 'read', name: 'Read' },
-  { id: 'guitar', name: 'Guitar' },
-  { id: 'call', name: 'Call family' },
-  { id: 'journal', name: 'Journal' },
-  { id: 'stretch', name: 'Stretch' },
+  { id: 'gym', name: 'Gym', committed: false },
+  { id: 'walk', name: 'Walk', committed: false },
+  { id: 'read', name: 'Read', committed: false },
+  { id: 'guitar', name: 'Guitar', committed: false },
+  { id: 'call', name: 'Call family', committed: false },
+  { id: 'journal', name: 'Journal', committed: false },
+  { id: 'stretch', name: 'Stretch', committed: false },
 ]
 
 const listings: Listing[] = [
@@ -126,7 +126,7 @@ describe('nowView', () => {
     expect(view.slots.map(s => s.item.id)).toEqual(['postWork', 'postDinner', 'bedtime'])
     expect(view.slots.map(s => s.displayName)).toEqual(['Post work', 'Post dinner', 'Bedtime'])
     expect(view.positionName).toBe('Post work')
-    expect(view.position).toEqual({ item: postWork, reason: 'first' })
+    expect(view.position).toEqual({ item: postWork, reason: 'first', spentBy: null })
     expect(view.activities.map(a => [a.activity.name, a.lastDone?.id ?? null])).toEqual([
       ['Gym', 'gymLast'],
       ['Walk', null],
@@ -141,7 +141,7 @@ describe('nowView', () => {
     ]
     const view = nowView(fixture({ journal }), at(2026, OCT, 12, 18, 0))
 
-    expect(view.position).toEqual({ item: postDinner, reason: 'advanced' })
+    expect(view.position).toEqual({ item: postDinner, reason: 'advanced', spentBy: null })
     expect(view.activities.map(a => [a.activity.name, a.lastDone?.id ?? null])).toEqual([
       ['Guitar', null],
       ['Call family', null],
@@ -155,7 +155,7 @@ describe('nowView', () => {
     const view = nowView(fixture({ journal, days }), at(2026, OCT, 13, 0, 30))
 
     expect(view.day).toBe('2026-10-12')
-    expect(view.position).toEqual({ item: bedtime, reason: 'stayed' })
+    expect(view.position).toEqual({ item: bedtime, reason: 'stayed', spentBy: null })
     expect(view.activities.map(a => [a.activity.name, a.lastDone?.id ?? null])).toEqual([
       ['Journal', null],
       ['Stretch', null],
@@ -169,7 +169,7 @@ describe('nowView', () => {
     ]
     const view = nowView(fixture({ days }), at(2026, OCT, 12, 18, 0))
 
-    expect(view.position).toEqual({ item: bedtime, reason: 'chosen' })
+    expect(view.position).toEqual({ item: bedtime, reason: 'chosen', spentBy: null })
     expect(view.activities.map(a => a.activity.name)).toEqual(['Journal', 'Stretch', 'Read'])
   })
 
@@ -209,6 +209,77 @@ describe('nowView', () => {
 
   test('on the basic day the position name is the plain slot name', () => {
     expect(nowView(fixture(), at(2026, OCT, 12, 18, 0)).positionName).toBe('Post work')
+  })
+})
+
+describe('nowView with committed activities', () => {
+  const gymDone = { ...entry('gymDone', 'gym', 'postWork', at(2026, OCT, 12, 17, 45), 'postWork'), committed: true }
+  const guitarDone = { ...entry('guitarDone', 'guitar', 'postDinner', at(2026, OCT, 12, 19, 45), 'postDinner'), committed: true }
+  const journalDone = { ...entry('journalDone', 'journal', 'bedtime', at(2026, OCT, 12, 21, 45), 'bedtime'), committed: true }
+
+  test('after Gym is committed in Post work: that slot names Gym, and the position is Post dinner with its activities', () => {
+    const view = nowView(fixture({ journal: [gymDone] }), at(2026, OCT, 12, 18, 0))
+
+    expect(view.slots.map(s => s.spentBy)).toEqual([{ entry: gymDone, activityName: 'Gym' }, null, null])
+    expect(view.position).toEqual({ item: postDinner, reason: 'advanced', spentBy: null })
+    expect(view.positionName).toBe('Post dinner')
+    expect(view.activities.map(a => a.activity.name)).toEqual(['Guitar', 'Call family', 'Read'])
+    expect(view.dayDone).toBe(false)
+  })
+
+  test('viewing the spent slot gives no activities, and the position names what spent it', () => {
+    const days: DayRecord[] = [
+      { day: '2026-10-12', templateId: 'basic', chosenItemId: 'postWork', chosenAt: at(2026, OCT, 12, 17, 50).getTime() },
+    ]
+    const view = nowView(fixture({ journal: [gymDone], days }), at(2026, OCT, 12, 18, 0))
+
+    expect(view.position).toEqual({ item: postWork, reason: 'chosen', spentBy: gymDone })
+    expect(view.positionName).toBe('Post work')
+    expect(view.activities).toEqual([])
+    expect(view.dayDone).toBe(false)
+  })
+
+  test('a spending entry whose activity no longer exists is named (removed)', () => {
+    const gone = { ...entry('gone', 'gone', 'postWork', at(2026, OCT, 12, 17, 45), 'postWork'), committed: true }
+    const view = nowView(fixture({ journal: [gone] }), at(2026, OCT, 12, 18, 0))
+
+    expect(view.slots[0].spentBy?.activityName).toBe('(removed)')
+  })
+
+  test('dayDone is true once every slot is spent, with no position and no activities', () => {
+    const view = nowView(fixture({ journal: [gymDone, guitarDone, journalDone] }), at(2026, OCT, 12, 22, 0))
+
+    expect(view.dayDone).toBe(true)
+    expect(view.position).toBeNull()
+    expect(view.positionName).toBeNull()
+    expect(view.activities).toEqual([])
+    expect(view.slots.every(s => s.spentBy !== null)).toBe(true)
+  })
+
+  test('dayDone is false while only some slots are spent', () => {
+    const view = nowView(fixture({ journal: [gymDone, guitarDone] }), at(2026, OCT, 12, 22, 0))
+    expect(view.dayDone).toBe(false)
+  })
+
+  test('dayDone is false while a spent slot is being viewed, even when every slot is spent', () => {
+    const days: DayRecord[] = [
+      { day: '2026-10-12', templateId: 'basic', chosenItemId: 'postWork', chosenAt: at(2026, OCT, 12, 21, 50).getTime() },
+    ]
+    const view = nowView(fixture({ journal: [gymDone, guitarDone, journalDone], days }), at(2026, OCT, 12, 22, 0))
+
+    expect(view.position?.item.id).toBe('postWork')
+    expect(view.position?.spentBy).toBe(gymDone)
+    expect(view.dayDone).toBe(false)
+  })
+
+  test('a template with no slots is never dayDone', () => {
+    const view = nowView(fixture({ items: [wake, work, dinner] }), at(2026, OCT, 12, 18, 0))
+    expect(view.dayDone).toBe(false)
+  })
+
+  test('with no template, dayDone is false', () => {
+    const view = nowView(fixture({ labels: [], templates: [], defaultTemplateId: null }), at(2026, OCT, 12, 18, 0))
+    expect(view.dayDone).toBe(false)
   })
 })
 

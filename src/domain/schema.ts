@@ -109,18 +109,20 @@ export interface JournalFields {
   sectionId: Id;
   loggedAt: number;
   itemId?: Id;
+  committed?: boolean;                 // only `true` is written: a quick entry has no committed cell
   note?: string;
   durationMinutes?: number;
 }
 
 export function writeJournalRow(store: MergeableStore, fields: JournalFields): Id {
   const id = newId();
-  const row: Record<string, string | number> = {
+  const row: Record<string, string | number | boolean> = {
     activityId: fields.activityId,
     sectionId: fields.sectionId,
     loggedAt: fields.loggedAt,
   };
   if (fields.itemId !== undefined) row.itemId = fields.itemId;
+  if (fields.committed === true) row.committed = true;
   if (fields.note) row.note = fields.note;
   if (fields.durationMinutes !== undefined) row.durationMinutes = fields.durationMinutes;
   store.setRow(TABLE.journal, id, row);

@@ -20,12 +20,10 @@ export function Tutorial() {
       <section className="flex flex-col gap-6">
         <div className="flex flex-col gap-3">
           <h2 className="text-xl font-semibold">Welcome to watodo</h2>
-          <p className="text-muted-foreground">watodo shows what you can do right now, and logs your pick with one tap.</p>
-          <p className="text-muted-foreground">It needs one day set up first.</p>
+          <Button className="h-14 w-full text-base" onClick={() => setPicking(true)}>
+            Choose a starting day
+          </Button>
         </div>
-        <Button className="h-14 w-full text-base" onClick={() => setPicking(true)}>
-          Choose a starting day
-        </Button>
 
         <StarterPicker
           open={picking}

@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import {
   addLabel, addSection, addActivityToSection, deleteLabel, deleteSection, deleteTemplate,
   draftFromTemplate, removeActivityFromSection, renameActivity, renameLabel, renameSection,
-  setDefaultTemplate, setLabelWeekdays, templatesUsingSection, type Id, type Label, type Section,
+  setActivityCommitted, setDefaultTemplate, setLabelWeekdays, templatesUsingSection, type Id, type Label, type Section,
   type Snapshot, type TemplateDraft,
 } from '@/domain'
 import { Badge } from '@/components/ui/badge'
@@ -188,13 +188,12 @@ function SlotView({ part, section, onBack }: { part: Part; section: Section; onB
   const snap = useSnapshot()
   // Whether the delete dialog is open.
   const [deleting, setDeleting] = useState(false)
-  const activityNames = new Map(snap.activities.map(activity => [activity.id, activity.name]))
   const using = templatesUsingSection(snap, section.id)
   const activities = snap.listings
     .filter(listing => listing.sectionId === section.id)
     .flatMap(listing => {
-      const name = activityNames.get(listing.activityId)
-      return name === undefined ? [] : [{ activityId: listing.activityId, name }]
+      const activity = snap.activities.find(candidate => candidate.id === listing.activityId)
+      return activity === undefined ? [] : [activity]
     })
 
   return (
@@ -211,18 +210,27 @@ function SlotView({ part, section, onBack }: { part: Part; section: Section; onB
       </div>
 
       <ul className="flex flex-col gap-2">
-        {activities.map(({ activityId, name }) => (
-          <li key={activityId} className="flex items-center gap-2">
+        {activities.map(activity => (
+          <li key={activity.id} className="flex items-center gap-2">
             <EditableText
               aria-label="Activity name"
-              value={name}
-              onCommit={text => renameActivity(store, activityId, text)}
+              value={activity.name}
+              onCommit={text => renameActivity(store, activity.id, text)}
             />
+            <label className="flex shrink-0 items-center gap-1 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                aria-label={`${activity.name} is committed`}
+                checked={activity.committed}
+                onChange={event => setActivityCommitted(store, activity.id, event.target.checked)}
+              />
+              Committed
+            </label>
             <Button
               variant="ghost"
               size="sm"
               className="shrink-0"
-              onClick={() => removeActivityFromSection(store, section.id, activityId)}
+              onClick={() => removeActivityFromSection(store, section.id, activity.id)}
             >
               Remove
             </Button>

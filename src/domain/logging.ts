@@ -10,13 +10,18 @@ export interface PendingLog { activityId: Id; sectionId: Id; itemId: Id }
 export type LogResult =
   | { status: 'logged'; entryId: Id }
   | { status: 'needs-template'; pending: PendingLog; guessTemplateId: Id }
-  | { status: 'not-available' };                              // no slot now, or activity not listed in it
+  | { status: 'not-available' };                              // no slot now, a spent slot, or activity not listed in it
+
+/** Whether the activity is committed at this moment. Looked up when an entry is written, not when it was tapped. */
+function isCommitted(store: WatodoStore, activityId: Id): boolean {
+  return store.getCell(TABLE.activities, activityId, 'committed') === true;
+}
 
 export function logActivity(store: WatodoStore, clock: Clock, activityId: Id): LogResult {
   const now = clock();
   const view = nowView(readSnapshot(store), now);
   const position = view.position;
-  if (position === null || view.template === null) return { status: 'not-available' };
+  if (position === null || view.template === null || position.spentBy !== null) return { status: 'not-available' };
 
   const { id: itemId, sectionId } = position.item;
   const listed = view.activities.some(({ activity }) => activity.id === activityId);
@@ -29,7 +34,8 @@ export function logActivity(store: WatodoStore, clock: Clock, activityId: Id): L
       guessTemplateId: view.template.id,
     };
   }
-  const entryId = writeJournalRow(store, { activityId, sectionId, itemId, loggedAt: now.getTime() });
+  const committed = isCommitted(store, activityId);
+  const entryId = writeJournalRow(store, { activityId, sectionId, itemId, loggedAt: now.getTime(), committed });
   return { status: 'logged', entryId };
 }
 
@@ -54,6 +60,7 @@ export function confirmDay(store: WatodoStore, clock: Clock, templateId: Id, pen
       sectionId: pending.sectionId,
       itemId: pending.itemId,
       loggedAt: now.getTime(),
+      committed: isCommitted(store, pending.activityId),
     });
   });
 }

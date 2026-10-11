@@ -22,6 +22,11 @@ function num(row: Row, cellId: string): number | undefined {
   return typeof cell === 'number' ? cell : undefined;
 }
 
+function flag(row: Row, cellId: string): boolean | undefined {
+  const cell = row[cellId];
+  return typeof cell === 'boolean' ? cell : undefined;
+}
+
 function readRows<T>(store: WatodoStore, tableId: string, read: RowReader<T>): T[] {
   return store.getRowIds(tableId).flatMap(id => {
     const value = read(id, store.getRow(tableId, id));
@@ -72,10 +77,11 @@ const readSection: RowReader<Section> = (id, row) => {
   return { id, name, position };
 };
 
+/** An activity with no `committed` cell is quick. */
 const readActivity: RowReader<Activity> = (id, row) => {
   const name = text(row, 'name');
   if (name === undefined) return undefined;
-  return { id, name };
+  return { id, name, committed: flag(row, 'committed') === true };
 };
 
 const readListing: RowReader<Listing> = (_id, row) => {
@@ -92,11 +98,13 @@ const readJournalEntry: RowReader<JournalEntry> = (id, row) => {
   const loggedAt = num(row, 'loggedAt');
   if (activityId === undefined || sectionId === undefined || loggedAt === undefined) return undefined;
   const itemId = text(row, 'itemId');
+  const committed = flag(row, 'committed');
   const note = text(row, 'note');
   const durationMinutes = num(row, 'durationMinutes');
   return {
     id, activityId, sectionId, loggedAt,
     ...(itemId === undefined ? {} : { itemId }),
+    ...(committed === undefined ? {} : { committed }),
     ...(note === undefined ? {} : { note }),
     ...(durationMinutes === undefined ? {} : { durationMinutes }),
   };

@@ -50,3 +50,8 @@ export function removeActivityFromSection(store: WatodoStore, sectionId: Id, act
 export function renameActivity(store: WatodoStore, id: Id, name: string): void {
   if (store.hasRow(TABLE.activities, id)) store.setCell(TABLE.activities, id, 'name', name.trim());
 }
+
+/** Committed activities spend their slot when logged. The kind belongs to the activity, in every slot. */
+export function setActivityCommitted(store: WatodoStore, activityId: Id, committed: boolean): void {
+  if (store.hasRow(TABLE.activities, activityId)) store.setCell(TABLE.activities, activityId, 'committed', committed);
+}

@@ -4,6 +4,7 @@ import {
   addDays, addPastEntry, dayKeyOf, deleteEntry, editEntry, entrySlotName, journalDay, nowView, sectionActivities,
   setDayNote, type DayKey, type Id, type JournalEntry,
 } from '@/domain'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -12,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { NativeSelect } from '@/ui/NativeSelect'
 import { dayLabel } from '@/ui/format'
 import { useNowDate, useSnapshot, useWatodo } from '@/ui/hooks'
+import { UndoCommitDialog } from '@/ui/UndoCommitDialog'
 import { FullDay } from './FullDay'
 
 /** One day at a time, starting today. The day can be moved back freely but not forward past today. */
@@ -120,8 +122,17 @@ function FullDayToggle() {
 function EntryRow({ entry, onEdit }: { entry: JournalEntry; onEdit(): void }) {
   const { store } = useWatodo()
   const snap = useSnapshot()
+  // Whether the Undo dialog is open for this committed entry.
+  const [undoing, setUndoing] = useState(false)
   const activityName = snap.activities.find(activity => activity.id === entry.activityId)?.name ?? '(removed)'
   const slotName = entrySlotName(snap, entry)
+  const committed = entry.committed === true
+
+  // A quick entry is deleted at once. A committed one is only deleted through the slow Undo.
+  const remove = () => {
+    if (committed) setUndoing(true)
+    else deleteEntry(store, entry.id)
+  }
 
   return (
     <li className="flex flex-col gap-1 py-3">
@@ -129,15 +140,24 @@ function EntryRow({ entry, onEdit }: { entry: JournalEntry; onEdit(): void }) {
         <p className="flex flex-wrap items-baseline gap-x-2 font-medium">
           <span>{activityName}</span>
           <span className="text-sm font-normal text-muted-foreground">{slotName}</span>
+          {committed && <Badge variant="secondary">committed</Badge>}
         </p>
         <div className="flex shrink-0 gap-1">
           <Button variant="ghost" size="sm" onClick={onEdit}>Edit</Button>
-          <Button variant="ghost" size="sm" onClick={() => deleteEntry(store, entry.id)}>Delete</Button>
+          <Button variant="ghost" size="sm" onClick={remove}>Delete</Button>
         </div>
       </div>
       {entry.note ? <p className="text-sm">{entry.note}</p> : null}
       {entry.durationMinutes !== undefined && (
         <p className="text-sm text-muted-foreground">{`${entry.durationMinutes} min`}</p>
+      )}
+      {undoing && (
+        <UndoCommitDialog
+          activityName={activityName}
+          slotName={slotName}
+          onUndo={() => deleteEntry(store, entry.id)}
+          onCancel={() => setUndoing(false)}
+        />
       )}
     </li>
   )

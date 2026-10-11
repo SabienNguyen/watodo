@@ -3,6 +3,7 @@ import {
   addPastEntry, confirmDay, deleteEntry, editEntry, goToSlot, logActivity, setDayNote, undoLast,
   type LogResult, type PendingLog,
 } from './logging';
+import { setActivityCommitted } from './menu';
 import { journalByDay, nowView, noonOf, type Id } from './rules';
 import { readSnapshot } from './store';
 import { saveTemplate } from './templates';
@@ -248,4 +249,139 @@ test('setDayNote sets and clears a day note', () => {
 
   setDayNote(store, '2026-10-12', '');
   expect(readSnapshot(store).days).toEqual([]);
+});
+
+describe('committed activities', () => {
+  test('logging a committed activity writes committed true, and the next view is on Post dinner', () => {
+    const { store, templateId, activityId, itemId } = basicDay();
+    setActivityCommitted(store, activityId('Gym'), true);
+    const clock = () => at(17, 45);
+    confirmDay(store, clock, templateId);
+
+    const entryId = loggedIdOf(logActivity(store, clock, activityId('Gym')));
+
+    const snap = readSnapshot(store);
+    expect(snap.journal).toEqual([
+      expect.objectContaining({ id: entryId, activityId: activityId('Gym'), itemId: itemId('Post work'), committed: true }),
+    ]);
+    expect(nowView(snap, at(17, 46)).position).toEqual({
+      item: expect.objectContaining({ name: 'Post dinner' }), reason: 'advanced', spentBy: null,
+    });
+  });
+
+  test('once the slot is spent, a log for another Post work activity is not available, nor is any log after goToSlot to it', () => {
+    const { store, templateId, activityId, itemId } = basicDay();
+    setActivityCommitted(store, activityId('Gym'), true);
+    let now = at(17, 45);
+    const clock = () => now;
+    confirmDay(store, clock, templateId);
+    loggedIdOf(logActivity(store, clock, activityId('Gym')));
+
+    now = at(17, 50);
+    expect(logActivity(store, clock, activityId('Walk'))).toEqual({ status: 'not-available' });
+    expect(readSnapshot(store).journal).toHaveLength(1);
+
+    goToSlot(store, clock, itemId('Post work'));
+    expect(logActivity(store, clock, activityId('Walk'))).toEqual({ status: 'not-available' });
+    expect(logActivity(store, clock, activityId('Gym'))).toEqual({ status: 'not-available' });
+    expect(readSnapshot(store).journal).toHaveLength(1);
+  });
+
+  test('when every slot is spent, nothing is available', () => {
+    const { store, templateId, activityId } = basicDay();
+    for (const name of ['Gym', 'Guitar', 'Journal']) setActivityCommitted(store, activityId(name), true);
+    let now = at(17, 45);
+    const clock = () => now;
+    confirmDay(store, clock, templateId);
+    loggedIdOf(logActivity(store, clock, activityId('Gym')));
+    now = at(19, 45);
+    loggedIdOf(logActivity(store, clock, activityId('Guitar')));
+    now = at(21, 45);
+    loggedIdOf(logActivity(store, clock, activityId('Journal')));
+
+    now = at(22, 0);
+    expect(logActivity(store, clock, activityId('Read'))).toEqual({ status: 'not-available' });
+    expect(nowView(readSnapshot(store), now).dayDone).toBe(true);
+  });
+
+  test('a quick activity writes no committed cell', () => {
+    const { store, templateId, activityId } = basicDay();
+    const clock = () => at(17, 45);
+    confirmDay(store, clock, templateId);
+
+    const entryId = loggedIdOf(logActivity(store, clock, activityId('Walk')));
+
+    expect(store.hasCell('journal', entryId, 'committed')).toBe(false);
+    expect(readSnapshot(store).journal[0]).not.toHaveProperty('committed');
+  });
+
+  test('the first log of a day, answered with confirmDay, also writes committed true', () => {
+    const { store, templateId, activityId } = basicDay();
+    setActivityCommitted(store, activityId('Gym'), true);
+    const clock = () => at(17, 45);
+
+    const first = logActivity(store, clock, activityId('Gym'));
+    const entryId = confirmDay(store, clock, templateId, pendingOf(first));
+
+    expect(readSnapshot(store).journal).toEqual([expect.objectContaining({ id: entryId, committed: true })]);
+    expect(nowView(readSnapshot(store), at(17, 46)).positionName).toBe('Post dinner');
+  });
+
+  test('marking an activity committed after logging it does not spend the slot retroactively', () => {
+    const { store, templateId, activityId } = basicDay();
+    const clock = () => at(17, 45);
+    confirmDay(store, clock, templateId);
+    loggedIdOf(logActivity(store, clock, activityId('Gym')));
+
+    setActivityCommitted(store, activityId('Gym'), true);
+
+    const snap = readSnapshot(store);
+    expect(snap.journal[0]).not.toHaveProperty('committed');
+    const view = nowView(snap, at(17, 50));
+    expect(view.slots[0].spentBy).toBeNull();
+    expect(view.position).toEqual({ item: expect.objectContaining({ name: 'Post work' }), reason: 'stayed', spentBy: null });
+  });
+
+  test('a committed entry still spends its slot after the activity is un-marked', () => {
+    const { store, templateId, activityId } = basicDay();
+    setActivityCommitted(store, activityId('Gym'), true);
+    const clock = () => at(17, 45);
+    confirmDay(store, clock, templateId);
+    loggedIdOf(logActivity(store, clock, activityId('Gym')));
+
+    setActivityCommitted(store, activityId('Gym'), false);
+
+    const view = nowView(readSnapshot(store), at(17, 50));
+    expect(view.slots[0].spentBy?.activityName).toBe('Gym');
+    expect(view.positionName).toBe('Post dinner');
+  });
+
+  test('deleting the committed entry reopens its slot, which can be logged in again', () => {
+    const { store, templateId, activityId } = basicDay();
+    setActivityCommitted(store, activityId('Gym'), true);
+    const clock = () => at(17, 45);
+    confirmDay(store, clock, templateId);
+    const entryId = loggedIdOf(logActivity(store, clock, activityId('Gym')));
+
+    deleteEntry(store, entryId);
+
+    const view = nowView(readSnapshot(store), at(17, 50));
+    expect(view.slots[0].spentBy).toBeNull();
+    expect(view.position).toMatchObject({ reason: 'first', item: { name: 'Post work' } });
+    expect(logActivity(store, clock, activityId('Walk'))).toMatchObject({ status: 'logged' });
+  });
+
+  test('a past entry for a committed activity does not spend a slot', () => {
+    const { store, templateId, activityId, sectionId } = basicDay();
+    setActivityCommitted(store, activityId('Gym'), true);
+    const clock = () => at(17, 45);
+    confirmDay(store, clock, templateId);
+
+    const entryId = addPastEntry(store, {
+      activityId: activityId('Gym'), sectionId: sectionId('Post work'), day: '2026-10-12',
+    });
+
+    expect(store.hasCell('journal', entryId, 'committed')).toBe(false);
+    expect(nowView(readSnapshot(store), at(17, 50)).slots[0].spentBy).toBeNull();
+  });
 });

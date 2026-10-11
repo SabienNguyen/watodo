@@ -9,11 +9,12 @@ export interface TemplateItem {
   position: number; sectionId?: Id; // sectionId only on slots. No start/end.
 }
 export interface Section { id: Id; name: string; position: number }
-export interface Activity { id: Id; name: string }
+export interface Activity { id: Id; name: string; committed: boolean } // committed: logging it spends the slot
 export interface Listing { sectionId: Id; activityId: Id; position: number }
 export interface JournalEntry {
   id: Id; activityId: Id; sectionId: Id; loggedAt: number; // epoch ms, recorded but never shown
   itemId?: Id;                     // the slot it was logged in, when known
+  committed?: boolean;             // this entry spent its slot (copied from the activity when logged)
   note?: string; durationMinutes?: number;
 }
 /** One row per day that has been touched. Confirmed means templateId is set. */

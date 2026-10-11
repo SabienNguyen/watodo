@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import {
   addActivityToSection, addSection, deleteSection, removeActivityFromSection, renameActivity, renameSection,
+  setActivityCommitted,
 } from './menu';
 import { addPastEntry } from './logging';
 import { nowView } from './rules';
@@ -23,7 +24,7 @@ test('adding a new activity creates it and lists it in the section', () => {
   const id = addActivityToSection(store, sectionId('Bedtime'), 'Meditate');
 
   const snap = readSnapshot(store);
-  expect(snap.activities).toContainEqual({ id, name: 'Meditate' });
+  expect(snap.activities).toContainEqual({ id, name: 'Meditate', committed: false });
   expect(snap.listings.filter(listing => listing.sectionId === sectionId('Bedtime'))).toHaveLength(4);
 });
 
@@ -100,6 +101,27 @@ test('sections and activities can be renamed', () => {
   const snap = readSnapshot(store);
   expect(snap.sections.find(section => section.id === sectionId('Bedtime'))?.name).toBe('Night');
   expect(snap.activities.find(activity => activity.id === activityId('Journal'))?.name).toBe('Diary');
+});
+
+test('setActivityCommitted flips an activity both ways', () => {
+  const { store, activityId } = basicDay();
+  const gym = activityId('Gym');
+  const committedOf = () => readSnapshot(store).activities.find(activity => activity.id === gym)?.committed;
+
+  setActivityCommitted(store, gym, true);
+  expect(committedOf()).toBe(true);
+  setActivityCommitted(store, gym, false);
+  expect(committedOf()).toBe(false);
+});
+
+test('setActivityCommitted does nothing for an unknown activity', () => {
+  const { store } = basicDay();
+  const before = readSnapshot(store).activities;
+
+  setActivityCommitted(store, 'no-such-activity', true);
+
+  expect(readSnapshot(store).activities).toEqual(before);
+  expect(store.hasRow('activities', 'no-such-activity')).toBe(false);
 });
 
 test('addSection puts the new section last', () => {

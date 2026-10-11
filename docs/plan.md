@@ -613,3 +613,75 @@ Web app manifest, icons, iOS tags, a service worker for offline loading, safe-ar
 
 ### Task 23: setup
 A systemd user service for the hub and a guided setup script for Tailscale and the phone.
+
+---
+
+# Change 11: quick and committed activities
+
+See "Quick and committed activities" in `docs/spec.md`.
+
+## Contracts
+
+### `src/domain/rules/types.ts`
+```ts
+export interface Activity { id: Id; name: string; committed: boolean }   // committed: logging it spends the slot
+export interface JournalEntry {
+  id: Id; activityId: Id; sectionId: Id; loggedAt: number;
+  itemId?: Id; committed?: boolean;      // committed: this entry spent its slot (copied from the activity when logged)
+  note?: string; durationMinutes?: number;
+}
+```
+A stored activity with no `committed` cell reads as `committed: false`.
+
+### `src/domain/rules/currentSlot.ts`
+```ts
+export interface Position { item: TemplateItem; reason: 'chosen' | 'stayed' | 'advanced' | 'first'; spentBy: JournalEntry | null }
+export function spentSlots(items: TemplateItem[], todaysEntries: JournalEntry[]): Map<Id, JournalEntry>; // slot item id -> the committed entry that spent it (the latest, if several)
+export function positionAt(items: TemplateItem[], todaysEntries: JournalEntry[], record: DayRecord | undefined, at: Date): Position | null;
+```
+An entry spends a slot when `entry.committed === true` and it maps to that slot (by `itemId`, else by first slot of its section, as today). `positionAt`, with `slots` in order and `spent = spentSlots(...)`:
+1. `chosen` exists and (`lastLog` is absent or `record.chosenAt > lastLog.loggedAt`) -> that slot, `'chosen'`, with `spentBy` set when it is spent. (A spent slot can be viewed this way.)
+2. `lastLog` exists, where `base` is its slot:
+   - if `lastLog.entry.committed`, or `at - loggedAt >= STAY_MS`: the first slot after `base` that is not spent; if there is none, the first slot anywhere that is not spent; reason `'advanced'`. If every slot is spent -> `null`. Exception kept from before: when the log is quick, old, and no other unspent slot exists, stay on `base` if `base` is not spent.
+   - otherwise (a quick log less than `STAY_MS` old): `base`, `'stayed'`.
+3. No logs: the first slot that is not spent, `'first'` (all are unspent in this case).
+`spentBy` is `null` except in rule 1 on a spent slot. `positionAt` returns `null` when the template has no slots or every slot is spent.
+
+### `src/domain/rules/views.ts`
+```ts
+export interface NowView {
+  day: DayKey;
+  guess: TemplateGuess; template: Template | null;
+  slots: { item: TemplateItem; displayName: string; spentBy: { entry: JournalEntry; activityName: string } | null }[];
+  position: Position | null;
+  positionName: string | null;
+  dayDone: boolean;                      // the template has slots and every one is spent, and no slot is being viewed
+  activities: { activity: Activity; lastDone: JournalEntry | null }[]; // empty when the current slot is spent
+}
+```
+`activityName` is the entry's activity name, or `(removed)`.
+
+### `src/domain/menu.ts`
+```ts
+export function setActivityCommitted(store: WatodoStore, activityId: Id, committed: boolean): void;
+```
+
+### `src/domain/logging.ts`
+`logActivity` and `confirmDay` (for a pending tap) write `committed: true` on the journal row when the activity is committed at that moment. `logActivity` returns `not-available` when the current slot is spent. `PendingLog` gains nothing: the domain looks the activity up when it writes. `addPastEntry` never writes `committed`. No signature changes.
+
+### UI
+```tsx
+// src/ui/now/SpendConfirm.tsx
+export function SpendConfirm(props: { slotName: string; activityName: string; onConfirm(): void; onCancel(): void }): JSX.Element; // dialog: "Spend {slot} on {activity}?", buttons "Spend it" / "Cancel"
+// src/ui/UndoCommitDialog.tsx
+export function UndoCommitDialog(props: { activityName: string; slotName: string; waitSeconds?: number; onUndo(): void; onCancel(): void }): JSX.Element;
+// dialog titled "Undo {activity}?" with the text "This reopens {slot}."; the confirm button is disabled and reads "Undo in {n}" counting down each second from waitSeconds (default 5), then reads "Undo" and is enabled; "Cancel" is always enabled
+```
+
+## Tasks
+
+### Task 24: committed activities in the rules and domain
+Implement the rules and domain contracts of Change 11, with tests.
+
+### Task 25: committed activities on screen
+The kind switch in the slot editing view, the spend confirmation, spent slots and the day-done state on the Now screen, and the slow undo on the Now screen and in the Journal.

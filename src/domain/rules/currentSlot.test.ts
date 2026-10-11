@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { STAY_MS, itemsOf, positionAt, slotDisplayNames, slotsOf } from './currentSlot'
+import { STAY_MS, itemsOf, positionAt, slotDisplayNames, slotsOf, spentSlots } from './currentSlot'
 import type { DayRecord, JournalEntry, Snapshot, TemplateItem } from './types'
 
 const NOW = new Date(2026, 9, 12, 18, 0)
@@ -23,6 +23,10 @@ const basic: TemplateItem[] = [morning, work, postWork, dinner, postDinner, bedt
 
 function entry(id: string, sectionId: string, loggedAt: Date, itemId?: string): JournalEntry {
   return { id, activityId: 'some-activity', sectionId, loggedAt: loggedAt.getTime(), itemId }
+}
+
+function committed(id: string, sectionId: string, loggedAt: Date, itemId?: string): JournalEntry {
+  return { ...entry(id, sectionId, loggedAt, itemId), committed: true }
 }
 
 function record(parts: Partial<DayRecord> = {}): DayRecord {
@@ -60,29 +64,67 @@ describe('slotsOf', () => {
   })
 })
 
+describe('spentSlots', () => {
+  test('a committed entry spends its slot', () => {
+    const spent = spentSlots(basic, [committed('c1', 'postWork', minutesAgo(10), 'postWork')])
+    expect([...spent.keys()]).toEqual(['postWork'])
+    expect(spent.get('postWork')?.id).toBe('c1')
+  })
+
+  test('a quick entry does not spend its slot', () => {
+    expect(spentSlots(basic, [entry('q1', 'postWork', minutesAgo(10), 'postWork')]).size).toBe(0)
+  })
+
+  test('an entry with no itemId spends the first slot of its section', () => {
+    const evening = [slot('eveningA', 1, 'Evening A', 'evening'), slot('eveningB', 2, 'Evening B', 'evening')]
+    const spent = spentSlots(evening, [committed('c1', 'evening', minutesAgo(10))])
+    expect([...spent.keys()]).toEqual(['eveningA'])
+  })
+
+  test('an itemId of the second of two same-section slots spends only that one', () => {
+    const evening = [slot('eveningA', 1, 'Evening A', 'evening'), slot('eveningB', 2, 'Evening B', 'evening')]
+    const spent = spentSlots(evening, [committed('c1', 'evening', minutesAgo(10), 'eveningB')])
+    expect([...spent.keys()]).toEqual(['eveningB'])
+  })
+
+  test('with two committed entries in one slot, the later one is reported', () => {
+    const earlierFirst = [
+      committed('earlier', 'postWork', minutesAgo(20), 'postWork'),
+      committed('later', 'postWork', minutesAgo(5), 'postWork'),
+    ]
+    const laterFirst = [...earlierFirst].reverse()
+    expect(spentSlots(basic, earlierFirst).get('postWork')?.id).toBe('later')
+    expect(spentSlots(basic, laterFirst).get('postWork')?.id).toBe('later')
+  })
+
+  test('a committed entry that matches no slot spends nothing', () => {
+    expect(spentSlots(basic, [committed('ghost', 'nowhere', minutesAgo(5), 'nope')]).size).toBe(0)
+  })
+})
+
 describe('positionAt', () => {
   test('no entries and no record: the first slot, first', () => {
-    expect(positionAt(basic, [], undefined, NOW)).toEqual({ item: postWork, reason: 'first' })
+    expect(positionAt(basic, [], undefined, NOW)).toEqual({ item: postWork, reason: 'first', spentBy: null })
   })
 
   test('a log in Post work 10 minutes ago: Post work, stayed', () => {
     const entries = [entry('e1', 'postWork', minutesAgo(10), 'postWork')]
-    expect(positionAt(basic, entries, undefined, NOW)).toEqual({ item: postWork, reason: 'stayed' })
+    expect(positionAt(basic, entries, undefined, NOW)).toEqual({ item: postWork, reason: 'stayed', spentBy: null })
   })
 
   test('a log 59 minutes ago is still stayed', () => {
     const entries = [entry('e1', 'postWork', minutesAgo(59), 'postWork')]
-    expect(positionAt(basic, entries, undefined, NOW)).toEqual({ item: postWork, reason: 'stayed' })
+    expect(positionAt(basic, entries, undefined, NOW)).toEqual({ item: postWork, reason: 'stayed', spentBy: null })
   })
 
   test('a log exactly 60 minutes ago advances past the fixed Dinner to Post dinner', () => {
     const entries = [entry('e1', 'postWork', minutesAgo(60), 'postWork')]
-    expect(positionAt(basic, entries, undefined, NOW)).toEqual({ item: postDinner, reason: 'advanced' })
+    expect(positionAt(basic, entries, undefined, NOW)).toEqual({ item: postDinner, reason: 'advanced', spentBy: null })
   })
 
   test('a log in Bedtime 3 hours ago stays on Bedtime, advanced', () => {
     const entries = [entry('e1', 'bedtime', minutesAgo(180), 'bedtime')]
-    expect(positionAt(basic, entries, undefined, NOW)).toEqual({ item: bedtime, reason: 'advanced' })
+    expect(positionAt(basic, entries, undefined, NOW)).toEqual({ item: bedtime, reason: 'advanced', spentBy: null })
   })
 
   test('two logs: the latest one is used, whatever the order', () => {
@@ -91,44 +133,44 @@ describe('positionAt', () => {
       entry('latest', 'postDinner', minutesAgo(10), 'postDinner'),
       entry('middle', 'postWork', minutesAgo(90), 'postWork'),
     ]
-    expect(positionAt(basic, entries, undefined, NOW)).toEqual({ item: postDinner, reason: 'stayed' })
+    expect(positionAt(basic, entries, undefined, NOW)).toEqual({ item: postDinner, reason: 'stayed', spentBy: null })
   })
 
   test('a chosen slot with no logs: that slot, chosen', () => {
     const rec = record({ chosenItemId: 'bedtime', chosenAt: minutesAgo(5).getTime() })
-    expect(positionAt(basic, [], rec, NOW)).toEqual({ item: bedtime, reason: 'chosen' })
+    expect(positionAt(basic, [], rec, NOW)).toEqual({ item: bedtime, reason: 'chosen', spentBy: null })
   })
 
   test('a chosen slot with no chosenAt counts as chosen at 0, so a later log wins', () => {
     const rec = record({ chosenItemId: 'bedtime' })
-    expect(positionAt(basic, [], rec, NOW)).toEqual({ item: bedtime, reason: 'chosen' })
+    expect(positionAt(basic, [], rec, NOW)).toEqual({ item: bedtime, reason: 'chosen', spentBy: null })
 
     const entries = [entry('e1', 'postWork', minutesAgo(10), 'postWork')]
-    expect(positionAt(basic, entries, rec, NOW)).toEqual({ item: postWork, reason: 'stayed' })
+    expect(positionAt(basic, entries, rec, NOW)).toEqual({ item: postWork, reason: 'stayed', spentBy: null })
   })
 
   test('chosen Post dinner, then a later log in Post work: the log wins, stayed', () => {
     const rec = record({ chosenItemId: 'postDinner', chosenAt: minutesAgo(30).getTime() })
     const entries = [entry('e1', 'postWork', minutesAgo(10), 'postWork')]
-    expect(positionAt(basic, entries, rec, NOW)).toEqual({ item: postWork, reason: 'stayed' })
+    expect(positionAt(basic, entries, rec, NOW)).toEqual({ item: postWork, reason: 'stayed', spentBy: null })
   })
 
   test('a log in Post work 2 hours ago, then Post work chosen afterwards: chosen', () => {
     const rec = record({ chosenItemId: 'postWork', chosenAt: minutesAgo(5).getTime() })
     const entries = [entry('e1', 'postWork', minutesAgo(120), 'postWork')]
-    expect(positionAt(basic, entries, rec, NOW)).toEqual({ item: postWork, reason: 'chosen' })
+    expect(positionAt(basic, entries, rec, NOW)).toEqual({ item: postWork, reason: 'chosen', spentBy: null })
   })
 
   test('a chosenItemId naming a fixed step, or nothing in the template, is ignored', () => {
     expect(positionAt(basic, [], record({ chosenItemId: 'work', chosenAt: minutesAgo(5).getTime() }), NOW))
-      .toEqual({ item: postWork, reason: 'first' })
+      .toEqual({ item: postWork, reason: 'first', spentBy: null })
     expect(positionAt(basic, [], record({ chosenItemId: 'nope', chosenAt: minutesAgo(5).getTime() }), NOW))
-      .toEqual({ item: postWork, reason: 'first' })
+      .toEqual({ item: postWork, reason: 'first', spentBy: null })
   })
 
   test('an entry with no itemId is matched by its section', () => {
     const entries = [entry('e1', 'postDinner', minutesAgo(10))]
-    expect(positionAt(basic, entries, undefined, NOW)).toEqual({ item: postDinner, reason: 'stayed' })
+    expect(positionAt(basic, entries, undefined, NOW)).toEqual({ item: postDinner, reason: 'stayed', spentBy: null })
   })
 
   test('with two slots sharing a section, an itemId picks the named slot', () => {
@@ -139,12 +181,12 @@ describe('positionAt', () => {
     ]
     const byItem = [entry('e1', 'evening', minutesAgo(10), 'eveningB')]
     expect(positionAt(evening, byItem, undefined, NOW)).toEqual({
-      item: evening[2], reason: 'stayed',
+      item: evening[2], reason: 'stayed', spentBy: null,
     })
 
     const bySection = [entry('e2', 'evening', minutesAgo(10))]
     expect(positionAt(evening, bySection, undefined, NOW)).toEqual({
-      item: evening[1], reason: 'stayed',
+      item: evening[1], reason: 'stayed', spentBy: null,
     })
   })
 
@@ -153,16 +195,104 @@ describe('positionAt', () => {
       entry('ghost', 'nowhere', minutesAgo(5), 'nope'),
       entry('real', 'postWork', minutesAgo(90), 'postWork'),
     ]
-    expect(positionAt(basic, entries, undefined, NOW)).toEqual({ item: postDinner, reason: 'advanced' })
+    expect(positionAt(basic, entries, undefined, NOW)).toEqual({ item: postDinner, reason: 'advanced', spentBy: null })
   })
 
   test('an itemId naming a fixed step falls back to the section match', () => {
     const entries = [entry('e1', 'postWork', minutesAgo(10), 'dinner')]
-    expect(positionAt(basic, entries, undefined, NOW)).toEqual({ item: postWork, reason: 'stayed' })
+    expect(positionAt(basic, entries, undefined, NOW)).toEqual({ item: postWork, reason: 'stayed', spentBy: null })
   })
 
   test('a template with no slots has no position', () => {
     expect(positionAt([morning, work, dinner], [], undefined, NOW)).toBeNull()
+  })
+})
+
+describe('positionAt with committed entries', () => {
+  test('a committed log in Post work one minute ago: Post dinner, advanced, without waiting for the hour', () => {
+    const entries = [committed('c1', 'postWork', minutesAgo(1), 'postWork')]
+    expect(positionAt(basic, entries, undefined, NOW)).toEqual({ item: postDinner, reason: 'advanced', spentBy: null })
+  })
+
+  test('committed in Post work and Post dinner: Bedtime', () => {
+    const entries = [
+      committed('c1', 'postWork', minutesAgo(30), 'postWork'),
+      committed('c2', 'postDinner', minutesAgo(10), 'postDinner'),
+    ]
+    expect(positionAt(basic, entries, undefined, NOW)).toEqual({ item: bedtime, reason: 'advanced', spentBy: null })
+  })
+
+  test('committed in all three slots: nothing left, so no position', () => {
+    const entries = [
+      committed('c1', 'postWork', minutesAgo(30), 'postWork'),
+      committed('c2', 'postDinner', minutesAgo(20), 'postDinner'),
+      committed('c3', 'bedtime', minutesAgo(5), 'bedtime'),
+    ]
+    expect(positionAt(basic, entries, undefined, NOW)).toBeNull()
+  })
+
+  test('Post work skipped: committed Post dinner is the latest, so Bedtime; then Bedtime too, so Post work', () => {
+    const dinnerOnly = [committed('c2', 'postDinner', minutesAgo(30), 'postDinner')]
+    expect(positionAt(basic, dinnerOnly, undefined, NOW)).toEqual({ item: bedtime, reason: 'advanced', spentBy: null })
+
+    const dinnerAndBedtime = [...dinnerOnly, committed('c3', 'bedtime', minutesAgo(5), 'bedtime')]
+    expect(positionAt(basic, dinnerAndBedtime, undefined, NOW)).toEqual({
+      item: postWork, reason: 'advanced', spentBy: null,
+    })
+  })
+
+  test('a quick log in Post work 10 minutes ago: Post work, stayed', () => {
+    const entries = [entry('q1', 'postWork', minutesAgo(10), 'postWork')]
+    expect(positionAt(basic, entries, undefined, NOW)).toEqual({ item: postWork, reason: 'stayed', spentBy: null })
+  })
+
+  test('a quick log in Post work 2 hours ago, with Post dinner spent before it: Bedtime', () => {
+    const entries = [
+      committed('c2', 'postDinner', minutesAgo(180), 'postDinner'),
+      entry('q1', 'postWork', minutesAgo(120), 'postWork'),
+    ]
+    expect(positionAt(basic, entries, undefined, NOW)).toEqual({ item: bedtime, reason: 'advanced', spentBy: null })
+  })
+
+  test('a quick log in Bedtime 2 hours ago, with the others spent: stays on Bedtime', () => {
+    const entries = [
+      committed('c1', 'postWork', minutesAgo(300), 'postWork'),
+      committed('c2', 'postDinner', minutesAgo(240), 'postDinner'),
+      entry('q1', 'bedtime', minutesAgo(120), 'bedtime'),
+    ]
+    expect(positionAt(basic, entries, undefined, NOW)).toEqual({ item: bedtime, reason: 'advanced', spentBy: null })
+  })
+
+  test('choosing a spent slot after its commit: that slot, chosen, spentBy the entry', () => {
+    const spending = committed('c1', 'postWork', minutesAgo(10), 'postWork')
+    const rec = record({ chosenItemId: 'postWork', chosenAt: minutesAgo(5).getTime() })
+    expect(positionAt(basic, [spending], rec, NOW)).toEqual({ item: postWork, reason: 'chosen', spentBy: spending })
+  })
+
+  test('choosing an unspent slot: chosen, with spentBy null', () => {
+    const rec = record({ chosenItemId: 'bedtime', chosenAt: minutesAgo(5).getTime() })
+    const entries = [committed('c1', 'postWork', minutesAgo(10), 'postWork')]
+    expect(positionAt(basic, entries, rec, NOW)).toEqual({ item: bedtime, reason: 'chosen', spentBy: null })
+  })
+
+  test('a spent slot chosen before the latest log is not chosen: the log wins, spentBy null', () => {
+    const rec = record({ chosenItemId: 'postWork', chosenAt: minutesAgo(30).getTime() })
+    const entries = [
+      committed('c1', 'postWork', minutesAgo(40), 'postWork'),
+      entry('q1', 'postDinner', minutesAgo(10), 'postDinner'),
+    ]
+    expect(positionAt(basic, entries, rec, NOW)).toEqual({ item: postDinner, reason: 'stayed', spentBy: null })
+  })
+
+  test('spentBy is only ever set on a chosen spent slot', () => {
+    const entries = [committed('c1', 'postWork', minutesAgo(10), 'postWork')]
+    const results = [
+      positionAt(basic, entries, undefined, NOW),
+      positionAt(basic, [], undefined, NOW),
+      positionAt(basic, [entry('q2', 'postDinner', minutesAgo(10))], undefined, NOW),
+      positionAt(basic, [entry('q3', 'postDinner', minutesAgo(90))], undefined, NOW),
+    ]
+    for (const result of results) expect(result?.spentBy).toBeNull()
   })
 })
 

@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { fireEvent, screen, within } from '@testing-library/react'
-import { describe, expect, test } from 'vitest'
+import { act, fireEvent, screen, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import {
   addPastEntry, confirmDay, createWatodoStore, dayKeyOf, draftFromStarter, finishSetup, goToSlot, logActivity,
-  readSnapshot, saveTemplate, setUpStarter, type Clock, type Id, type WatodoStore,
+  readSnapshot, saveTemplate, setActivityCommitted, setUpStarter, type Clock, type Id, type WatodoStore,
 } from '@/domain'
 import { renderWithWatodo } from '@/ui/testing'
 import { JournalScreen } from './JournalScreen'
@@ -492,5 +492,80 @@ describe('repeated slots', () => {
 
     expect(screen.getByRole('heading', { name: 'Fri 9 Oct' })).toBeInTheDocument()
     expect(within(rowOf('Gym')).getByText('Post work')).toBeInTheDocument()
+  })
+})
+
+describe('committed entries', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  /** Today has a committed Gym entry in Post work, which spends that slot, and a quick Walk entry. */
+  function committedGymStore(): WatodoStore {
+    const store = finishedStore()
+    setActivityCommitted(store, activityId(store, 'Gym'), true)
+    confirmDay(store, MONDAY_1745, basicTemplateId(store))
+    logActivity(store, MONDAY_1745, activityId(store, 'Gym'))
+    addPastEntry(store, { activityId: activityId(store, 'Walk'), sectionId: sectionId(store, 'Post work'), day: '2026-10-12' })
+    return store
+  }
+
+  test('a committed entry shows a committed badge, and a quick entry does not', () => {
+    renderWithWatodo(<JournalScreen />, { store: committedGymStore(), clock: MONDAY_1745 })
+
+    expect(within(rowOf('Gym')).getByText('committed')).toBeInTheDocument()
+    expect(within(rowOf('Walk')).queryByText('committed')).toBeNull()
+  })
+
+  test('Delete on a committed entry opens the Undo dialog, which names the activity and the slot', () => {
+    renderWithWatodo(<JournalScreen />, { store: committedGymStore(), clock: MONDAY_1745 })
+
+    fireEvent.click(within(rowOf('Gym')).getByRole('button', { name: 'Delete' }))
+
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: 'Undo Gym?' })).toBeInTheDocument()
+    expect(within(dialog).getByText('This reopens Post work.')).toBeInTheDocument()
+  })
+
+  test('a committed entry is deleted only when Undo is pressed after the countdown', () => {
+    const { store } = renderWithWatodo(<JournalScreen />, { store: committedGymStore(), clock: MONDAY_1745 })
+    const gymId = activityId(store, 'Gym')
+    fireEvent.click(within(rowOf('Gym')).getByRole('button', { name: 'Delete' }))
+
+    expect(readSnapshot(store).journal.map(e => e.activityId)).toContain(gymId)
+
+    act(() => { vi.advanceTimersByTime(3000) })
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Undo in 2' }))
+    expect(readSnapshot(store).journal.map(e => e.activityId)).toContain(gymId)
+
+    act(() => { vi.advanceTimersByTime(2000) })
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Undo' }))
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(readSnapshot(store).journal.map(e => e.activityId)).not.toContain(gymId)
+    expect(screen.queryByText('Gym')).toBeNull()
+  })
+
+  test('Cancel in the Undo dialog keeps the committed entry', () => {
+    const { store } = renderWithWatodo(<JournalScreen />, { store: committedGymStore(), clock: MONDAY_1745 })
+    fireEvent.click(within(rowOf('Gym')).getByRole('button', { name: 'Delete' }))
+
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(readSnapshot(store).journal.map(e => e.activityId)).toContain(activityId(store, 'Gym'))
+  })
+
+  test('Delete on a quick entry still deletes at once, with no dialog', () => {
+    const { store } = renderWithWatodo(<JournalScreen />, { store: committedGymStore(), clock: MONDAY_1745 })
+
+    fireEvent.click(within(rowOf('Walk')).getByRole('button', { name: 'Delete' }))
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(readSnapshot(store).journal.map(e => e.activityId)).not.toContain(activityId(store, 'Walk'))
   })
 })

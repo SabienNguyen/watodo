@@ -125,6 +125,32 @@ test('readSnapshot skips a journal row that is missing a required cell', () => {
   expect(readSnapshot(store).journal.map(entry => entry.id)).toEqual(['complete']);
 });
 
+test('an activity row with no committed cell reads as committed false', () => {
+  const { store, activityId } = basicDay();
+  expect(readSnapshot(store).activities.find(activity => activity.id === activityId('Gym')))
+    .toEqual({ id: activityId('Gym'), name: 'Gym', committed: false });
+});
+
+test('an activity row with a committed cell reads as that flag', () => {
+  const { store, activityId } = basicDay();
+  store.setCell('activities', activityId('Gym'), 'committed', true);
+  expect(readSnapshot(store).activities.find(activity => activity.id === activityId('Gym'))?.committed).toBe(true);
+});
+
+test('a journal row round-trips its committed cell, and a row without one reads without it', () => {
+  const { store, activityId, sectionId, itemId } = basicDay();
+  const common = { activityId: activityId('Gym'), sectionId: sectionId('Post work'), itemId: itemId('Post work') };
+  store.setRow('journal', 'spent', { ...common, loggedAt: at(17, 45).getTime(), committed: true });
+  store.setRow('journal', 'quick', { ...common, loggedAt: at(17, 50).getTime() });
+  store.setRow('journal', 'unspent', { ...common, loggedAt: at(17, 55).getTime(), committed: false });
+
+  const journal = readSnapshot(store).journal;
+  expect(journal.map(entry => [entry.id, entry.committed])).toEqual([
+    ['spent', true], ['quick', undefined], ['unspent', false],
+  ]);
+  expect(journal[1]).not.toHaveProperty('committed');
+});
+
 test('a deleted entry stays deleted after merging both ways', () => {
   const { store: first, activityId, sectionId } = basicDay();
   const other = createWatodoStore();

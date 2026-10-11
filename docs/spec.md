@@ -19,6 +19,19 @@ TypeScript, React + Vite, Tailwind, shadcn/ui, TinyBase (`MergeableStore`, saved
 - **No clock times anywhere on screen.** Templates have no times, and the app never displays the time of a log. Dates are shown; times are not.
 - **Day**: a day runs from 04:00 to 04:00. A log at 00:15 belongs to the evening before.
 
+## Quick and committed activities
+
+Borrowed from Persona 5 Royal's time slots: some things you do use up the slot, others do not.
+
+- Every activity is **quick** or **committed**. New and existing activities are quick. The kind belongs to the activity, so it is the same in every slot that lists it. It is set in the slot's editing view.
+- Tapping a **quick** activity logs it at once, as before. The slot stays open.
+- Tapping a **committed** activity asks first: `Spend {slot} on {activity}?` with `Spend it` and `Cancel`. Confirming logs it and **spends the slot**: nothing more can be logged in that slot today, and the Now screen moves straight to the next slot that is not spent. On a day's first log this question comes before the "which kind of day" question.
+- A spent slot stays in the slot row, marked as spent. Tapping it shows what it was spent on, not its activities.
+- When every slot is spent, the Now screen says `That's today.`
+- **Undoing a commitment is possible but slow on purpose.** From the spent slot on the Now screen, or by deleting that entry in the Journal, an `Undo` dialog opens whose button is disabled for five seconds, counting down, before it can be pressed. Undoing removes the entry and reopens the slot. There is no instant Undo for a committed activity.
+- Entries added by hand in the Journal never spend a slot.
+- If only quick activities are logged in a slot, it moves on as before: by tapping another slot, or an hour after the last log.
+
 ## Behaviour
 
 ### Today's template

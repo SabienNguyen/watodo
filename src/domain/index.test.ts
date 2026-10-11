@@ -9,7 +9,7 @@ test('re-exports the domain interface and the rules', () => {
     'addSection', 'renameSection', 'deleteSection', 'addActivityToSection', 'removeActivityFromSection', 'renameActivity',
     'addLabel', 'renameLabel', 'setLabelWeekdays', 'deleteLabel', 'saveTemplate',
     'setDefaultTemplate', 'deleteTemplate',
-    'nowView', 'fullDayView', 'journalByDay', 'progress', 'dotStrip', 'guessTemplate', 'positionAt', 'lastDone',
+    'nowView', 'fullDayView', 'journalByDay', 'progress', 'dotStrip', 'guessTemplate', 'positionAt', 'spentSlots', 'lastDone',
     'dayKeyOf', 'noonOf', 'templatesUsingSection', 'STARTERS', 'draftFromStarter', 'draftFromTemplate',
     'blankDraft', 'moveStep',
   ];

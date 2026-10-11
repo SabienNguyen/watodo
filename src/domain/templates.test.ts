@@ -177,7 +177,7 @@ test('saving the weekend starter creates the Weekend label, a Free time section,
   expect(sectionActivities(snap, freeTime!.id).map(activity => activity.name))
     .toEqual(['Hike', 'Cook something new', 'Read', 'Call family']);
   expect(snap.activities.filter(activity => activity.name === 'Read')).toEqual([
-    { id: activityId('Read'), name: 'Read' },
+    { id: activityId('Read'), name: 'Read', committed: false },
   ]);
   expect(snap.activities).toHaveLength(9);
 

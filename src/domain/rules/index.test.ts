@@ -5,7 +5,7 @@ test('re-exports every rule function and constant', () => {
   const names: (keyof typeof rules)[] = [
     'DAY_START_MINUTES', 'dayKeyOf', 'weekdayOf', 'addDays', 'noonOf',
     'guessTemplate',
-    'STAY_MS', 'itemsOf', 'slotsOf', 'positionAt',
+    'STAY_MS', 'itemsOf', 'slotsOf', 'spentSlots', 'positionAt',
     'lastDone', 'nowView', 'fullDayView',
     'journalByDay', 'progress', 'dotStrip', 'templatesUsingSection',
     'STARTERS', 'SUGGESTED_ACTIVITIES', 'draftFromStarter', 'draftFromTemplate', 'blankDraft', 'moveStep',

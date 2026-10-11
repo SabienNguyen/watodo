@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
+import { CheckIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import {
-  deleteEntry, editEntry, goToSlot, logActivity, nowView, type Id, type PendingLog,
+  deleteEntry, editEntry, entrySlotName, goToSlot, logActivity, nowView, readSnapshot, type Activity, type Id,
+  type PendingLog,
 } from '@/domain'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -12,26 +14,44 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { lastDoneText } from '@/ui/format'
 import { useNowDate, useSnapshot, useWatodo } from '@/ui/hooks'
+import { UndoCommitDialog } from '@/ui/UndoCommitDialog'
 import { DayPicker } from './DayPicker'
+import { SpendConfirm } from './SpendConfirm'
 
 const AFTER_LOG_MS = 6000
 
 interface NoteTarget { entryId: Id; activityName: string }
+/** A committed activity waiting for the user to confirm the spend. */
+interface SpendTarget { activityId: Id; activityName: string; slotName: string }
+/** A spent slot's commitment waiting for the user to undo it. */
+interface UndoTarget { entryId: Id; activityName: string; slotName: string }
 
 export function NowScreen() {
   const { store, clock } = useWatodo()
   const snap = useSnapshot()
   const now = useNowDate()
   const view = nowView(snap, now)
+  const { position, positionName, slots, template, dayDone } = view
 
   // null: picker closed. An object with no pending: switch mode.
   const [picker, setPicker] = useState<{ pending?: PendingLog } | null>(null)
   const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null)
+  const [spending, setSpending] = useState<SpendTarget | null>(null)
+  const [undoing, setUndoing] = useState<UndoTarget | null>(null)
+
+  // The spent slot the position is on, with the entry that spent it. Null on an open slot.
+  const current = slots.find(({ item }) => item.id === position?.item.id)
+  const spentHere = position?.spentBy ? (current?.spentBy ?? null) : null
 
   const showAfterLog = (entryId: Id, activityName: string) => {
+    const fresh = readSnapshot(store)
+    const entry = fresh.journal.find(candidate => candidate.id === entryId)
+    // A committed log spent its slot: the bar names the slot and offers no Undo.
+    const spentSlotName = entry?.committed === true ? entrySlotName(fresh, entry) : null
     toast.custom(id => (
       <AfterLogBar
         activityName={activityName}
+        spentSlotName={spentSlotName}
         onUndo={() => {
           deleteEntry(store, entryId)
           toast.dismiss(id)
@@ -44,10 +64,24 @@ export function NowScreen() {
     ), { duration: AFTER_LOG_MS })
   }
 
-  const tapActivity = (activityId: Id, activityName: string) => {
+  const logTap = (activityId: Id, activityName: string) => {
     const result = logActivity(store, clock, activityId)
     if (result.status === 'logged') showAfterLog(result.entryId, activityName)
     else if (result.status === 'needs-template') setPicker({ pending: result.pending })
+  }
+
+  // A quick activity logs at once. A committed one asks first.
+  const tapActivity = (activity: Activity) => {
+    if (activity.committed) {
+      setSpending({ activityId: activity.id, activityName: activity.name, slotName: positionName ?? '' })
+    } else {
+      logTap(activity.id, activity.name)
+    }
+  }
+
+  const confirmSpend = (target: SpendTarget) => {
+    setSpending(null)
+    logTap(target.activityId, target.activityName)
   }
 
   const pickerDone = (entryId: Id | null) => {
@@ -56,8 +90,6 @@ export function NowScreen() {
     const activityName = snap.activities.find(a => a.id === pending.activityId)?.name ?? ''
     showAfterLog(entryId, activityName)
   }
-
-  const { position, positionName, slots, template } = view
 
   return (
     <div className="flex flex-col gap-6">
@@ -76,17 +108,19 @@ export function NowScreen() {
 
       {slots.length > 0 && (
         <div className="flex gap-2 overflow-x-auto pb-1">
-          {slots.map(({ item, displayName }) => {
-            const current = item.id === position?.item.id
+          {slots.map(({ item, displayName, spentBy }) => {
+            const pressed = item.id === position?.item.id
             return (
               <Button
                 key={item.id}
-                variant={current ? 'default' : 'outline'}
-                className="shrink-0"
-                aria-pressed={current}
+                variant={pressed ? 'default' : 'outline'}
+                className={spentBy ? 'shrink-0 opacity-60' : 'shrink-0'}
+                aria-pressed={pressed}
+                aria-label={spentBy ? `${displayName}, spent on ${spentBy.activityName}` : undefined}
                 onClick={() => goToSlot(store, clock, item.id)}
               >
                 {displayName}
+                {spentBy && <CheckIcon aria-hidden="true" />}
               </Button>
             )
           })}
@@ -94,28 +128,52 @@ export function NowScreen() {
       )}
 
       {template === null && <p className="text-muted-foreground">No template yet.</p>}
-      {template !== null && position === null && (
+      {template !== null && slots.length === 0 && (
         <p className="text-muted-foreground">This template has no slots yet. Add one in Edit.</p>
       )}
+      {dayDone && <h2 className="text-xl font-semibold">That&apos;s today.</h2>}
 
       {position !== null && (
         <section className="flex flex-col gap-3">
           <h2 className="text-xl font-semibold">{positionName}</h2>
 
-          {view.activities.length === 0 && (
-            <p className="text-muted-foreground">No activities in this slot yet.</p>
+          {spentHere !== null ? (
+            <>
+              <p className="text-muted-foreground">{`Spent on ${spentHere.activityName}.`}</p>
+              <div>
+                <Button
+                  variant="outline"
+                  onClick={() => setUndoing({
+                    entryId: spentHere.entry.id,
+                    activityName: spentHere.activityName,
+                    slotName: positionName ?? '',
+                  })}
+                >
+                  Undo
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              {view.activities.length === 0 && (
+                <p className="text-muted-foreground">No activities in this slot yet.</p>
+              )}
+              {view.activities.map(({ activity, lastDone }) => (
+                <Button
+                  key={activity.id}
+                  variant="outline"
+                  className="h-14 w-full justify-between px-4 text-base"
+                  onClick={() => tapActivity(activity)}
+                >
+                  <span className="flex items-center gap-2">
+                    <span>{activity.name}</span>
+                    {activity.committed && <Badge variant="secondary">committed</Badge>}
+                  </span>
+                  <span className="text-sm text-muted-foreground">{`last: ${lastDoneText(lastDone, now)}`}</span>
+                </Button>
+              ))}
+            </>
           )}
-          {view.activities.map(({ activity, lastDone }) => (
-            <Button
-              key={activity.id}
-              variant="outline"
-              className="h-14 w-full justify-between px-4 text-base"
-              onClick={() => tapActivity(activity.id, activity.name)}
-            >
-              <span>{activity.name}</span>
-              <span className="text-sm text-muted-foreground">{`last: ${lastDoneText(lastDone, now)}`}</span>
-            </Button>
-          ))}
         </section>
       )}
 
@@ -125,6 +183,28 @@ export function NowScreen() {
         onClose={() => setPicker(null)}
         onDone={pickerDone}
       />
+
+      {spending !== null && (
+        <SpendConfirm
+          slotName={spending.slotName}
+          activityName={spending.activityName}
+          onConfirm={() => confirmSpend(spending)}
+          onCancel={() => setSpending(null)}
+        />
+      )}
+
+      {undoing !== null && (
+        <UndoCommitDialog
+          key={undoing.entryId}
+          activityName={undoing.activityName}
+          slotName={undoing.slotName}
+          onUndo={() => {
+            deleteEntry(store, undoing.entryId)
+            setUndoing(null)
+          }}
+          onCancel={() => setUndoing(null)}
+        />
+      )}
 
       {noteTarget !== null && (
         <AddNoteDialog
@@ -137,16 +217,18 @@ export function NowScreen() {
   )
 }
 
-function AfterLogBar({ activityName, onUndo, onAddNote }: {
+/** After a quick log: Undo and Add note. After a committed log, the slot is spent: Add note only. */
+function AfterLogBar({ activityName, spentSlotName, onUndo, onAddNote }: {
   activityName: string
+  spentSlotName: string | null
   onUndo(): void
   onAddNote(): void
 }): ReactNode {
   return (
     <div className="flex w-full items-center justify-between gap-2 rounded-xl bg-popover px-3 py-2 text-sm text-popover-foreground ring-1 ring-foreground/10">
-      <span>{`Logged ${activityName}`}</span>
+      <span>{spentSlotName === null ? `Logged ${activityName}` : `Spent ${spentSlotName} on ${activityName}`}</span>
       <div className="flex shrink-0 gap-1">
-        <Button size="sm" variant="ghost" onClick={onUndo}>Undo</Button>
+        {spentSlotName === null && <Button size="sm" variant="ghost" onClick={onUndo}>Undo</Button>}
         <Button size="sm" variant="outline" onClick={onAddNote}>Add note</Button>
       </div>
     </div>

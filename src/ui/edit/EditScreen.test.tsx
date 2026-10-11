@@ -3,7 +3,7 @@ import { act, fireEvent, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import {
   addLabel, addSection, blankDraft, createWatodoStore, deleteLabel, deleteSection, deleteTemplate,
-  finishSetup, readSnapshot, saveTemplate, setUpStarter, type Id, type WatodoStore,
+  finishSetup, readSnapshot, saveTemplate, setActivityCommitted, setUpStarter, type Id, type WatodoStore,
 } from '@/domain'
 import { renderWithWatodo } from '@/ui/testing'
 import { EditScreen } from './EditScreen'
@@ -394,6 +394,45 @@ describe('Slots', () => {
     expect(screen.queryByRole('heading', { name: 'Post work' })).toBeNull()
     expect(screen.getByRole('tab', { name: 'Slots' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('button', { name: 'Post dinner' })).toBeInTheDocument()
+  })
+
+  test('each activity has a Committed checkbox, unchecked for a quick activity such as Gym', () => {
+    renderEdit()
+    tapRow('Post work')
+
+    expect(screen.getByRole('checkbox', { name: 'Gym is committed' })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Walk is committed' })).not.toBeChecked()
+  })
+
+  test('checking Gym is committed makes its activity committed in the snapshot', () => {
+    const { store } = renderEdit()
+    tapRow('Post work')
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Gym is committed' }))
+
+    expect(readSnapshot(store).activities.find(a => a.name === 'Gym')?.committed).toBe(true)
+    expect(screen.getByRole('checkbox', { name: 'Gym is committed' })).toBeChecked()
+  })
+
+  test('a committed activity shows its checkbox checked in every slot that lists it', () => {
+    const { store } = renderEdit()
+    const read = readSnapshot(store).activities.find(a => a.name === 'Read')
+    if (!read) throw new Error('no Read activity')
+    setActivityCommitted(store, read.id, true)
+
+    tapRow('Post work')
+    expect(screen.getByRole('checkbox', { name: 'Read is committed' })).toBeChecked()
+
+    goBack('Slots')
+    tapRow('Post dinner')
+    expect(screen.getByRole('checkbox', { name: 'Read is committed' })).toBeChecked()
+  })
+
+  test('the activities have no explanatory line about committed activities', () => {
+    renderEdit()
+    tapRow('Post work')
+
+    expect(screen.queryByText("A committed activity uses up the slot for the day. Quick ones don't.")).not.toBeInTheDocument()
   })
 })
 

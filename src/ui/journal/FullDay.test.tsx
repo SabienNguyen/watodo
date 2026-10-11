@@ -82,11 +82,11 @@ describe('FullDay', () => {
     expect(document.body.textContent).not.toMatch(/\d{1,2}:\d{2}/)
   })
 
-  test('has no buttons and shows the footer note', () => {
+  test('has no buttons and no footer note', () => {
     renderWithWatodo(<FullDay />)
 
     expect(screen.queryAllByRole('button')).toHaveLength(0)
-    expect(screen.getByText("Fixed steps are shown here only. They can't be tapped or logged.")).toBeInTheDocument()
+    expect(screen.queryByText("Fixed steps are shown here only. They can't be tapped or logged.")).not.toBeInTheDocument()
   })
 
   test('with no template renders nothing', () => {
