@@ -143,6 +143,16 @@ describe('TemplateEditor', () => {
       .toEqual(officeStepNames.map(name => `Drag to reorder ${name}`))
   })
 
+  test('each drag handle stops touch scrolling and text selection, and has no long-press menu', () => {
+    open(starter('office'))
+
+    const handles = screen.getAllByRole('button', { name: /^Drag to reorder / })
+    for (const handle of handles) {
+      expect(handle).toHaveClass('touch-none', 'select-none')
+      expect(fireEvent.contextMenu(handle)).toBe(false)
+    }
+  })
+
   test('Cancel calls onCancel and leaves the store unchanged', () => {
     const { store, onCancel, onSaved } = open(starter('office'))
     const before = readSnapshot(store)

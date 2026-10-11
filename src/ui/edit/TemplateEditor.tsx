@@ -12,9 +12,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NativeSelect } from '@/ui/NativeSelect'
 import { useSnapshot, useWatodo } from '@/ui/hooks'
+import { dragActivation } from './dragActivation'
 
 const NEW_LABEL = '__new-label__'
 const NEW_SLOT = '__new-slot__'
+
+/** Pointer drags start at once on a grip handle (see dragActivation); the keyboard reorders as before. */
+const STEP_SENSORS = [PointerSensor.configure({ activationConstraints: dragActivation }), KeyboardSensor]
 
 /** Names match the way save resolves them: trimmed and case-insensitive. */
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
@@ -139,7 +143,7 @@ export function TemplateEditorForm({ draft, onSaved, onCancel }: {
 
       <div data-slot="template-steps" className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-1">
         <h3 className="text-sm font-medium">Steps</h3>
-        <DragDropProvider sensors={[PointerSensor, KeyboardSensor]} onDragEnd={onDragEnd}>
+        <DragDropProvider sensors={STEP_SENSORS} onDragEnd={onDragEnd}>
           <ul className="flex flex-col gap-2">
             {rows.map((row, index) => (
               <StepRow
@@ -183,6 +187,8 @@ function StepRow({ row, index, sections, onChange, onRemove }: {
 
   // One grid line: handle | kind badge | field | remove. The field column is the only flexible one.
   // The typed slot name, when shown, sits on a second line under the select, in the field column.
+  // The handle: touch-none keeps the page from scrolling under a finger; select-none and the callout rule
+  // stop iOS selecting text or opening its long-press menu on it; the contextmenu is prevented on the button.
   return (
     <li
       ref={ref}
@@ -192,8 +198,9 @@ function StepRow({ row, index, sections, onChange, onRemove }: {
         ref={handleRef}
         variant="ghost"
         size="icon"
-        className="size-12 touch-none cursor-grab"
+        className="size-12 touch-none cursor-grab select-none [-webkit-touch-callout:none]"
         aria-label={`Drag to reorder ${shownName}`}
+        onContextMenu={event => event.preventDefault()}
       >
         <GripVerticalIcon />
       </Button>
