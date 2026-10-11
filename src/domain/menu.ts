@@ -14,12 +14,20 @@ export function renameSection(store: WatodoStore, id: Id, name: string): void {
   if (store.hasRow(TABLE.sections, id)) store.setCell(TABLE.sections, id, 'name', name.trim());
 }
 
-/** Also removes the section's listings. Journal entries and activities are kept. */
+/**
+ * Also removes the section's listings, and the slots that point at it in every template.
+ * Journal entries and activities are kept.
+ */
 export function deleteSection(store: WatodoStore, id: Id): void {
   store.transaction(() => {
     for (const listing of store.getRowIds(TABLE.listings)) {
       if (store.getCell(TABLE.listings, listing, 'sectionId') === id) {
         store.delRow(TABLE.listings, listing);
+      }
+    }
+    for (const item of store.getRowIds(TABLE.items)) {
+      if (store.getCell(TABLE.items, item, 'kind') === 'slot' && store.getCell(TABLE.items, item, 'sectionId') === id) {
+        store.delRow(TABLE.items, item);
       }
     }
     store.delRow(TABLE.sections, id);

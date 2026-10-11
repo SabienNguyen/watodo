@@ -7,7 +7,8 @@ test('re-exports every rule function and constant', () => {
     'guessTemplate',
     'STAY_MS', 'itemsOf', 'slotsOf', 'positionAt',
     'lastDone', 'nowView', 'fullDayView',
-    'journalByDay', 'progress', 'dotStrip',
+    'journalByDay', 'progress', 'dotStrip', 'templatesUsingSection',
+    'STARTERS', 'SUGGESTED_ACTIVITIES', 'draftFromStarter', 'draftFromTemplate', 'blankDraft', 'moveStep',
   ]
   for (const name of names) {
     expect(rules[name], name).toBeDefined()

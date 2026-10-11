@@ -66,11 +66,13 @@ test('a journal row can carry the slot it was logged in, and a day row its chose
 
 test('an item row saved with start and end and no position keeps its order as its position', () => {
   const store = createWatodoStore();
+  store.setRow('sections', 'post-work', { name: 'Post work', position: 0 });
+  store.setRow('sections', 'bedtime', { name: 'Bedtime', position: 1 });
   store.setRow('items', 'legacy-bedtime', {
-    templateId: 't', kind: 'slot', name: 'Bedtime', start: 1290, end: 1380, sectionId: 's',
+    templateId: 't', kind: 'slot', name: 'Bedtime', start: 1290, end: 1380, sectionId: 'bedtime',
   });
   store.setRow('items', 'legacy-post-work', {
-    templateId: 't', kind: 'slot', name: 'Post work', start: 1050, end: 1140, sectionId: 's',
+    templateId: 't', kind: 'slot', name: 'Post work', start: 1050, end: 1140, sectionId: 'post-work',
   });
   store.setRow('items', 'new-wake', { templateId: 't', kind: 'fixed', name: 'Wake', position: 0 });
 
@@ -79,8 +81,32 @@ test('an item row saved with start and end and no position keeps its order as it
     ['new-wake', 0], ['legacy-post-work', 1050], ['legacy-bedtime', 1290],
   ]);
   expect(items[1]).toEqual({
-    id: 'legacy-post-work', templateId: 't', kind: 'slot', name: 'Post work', position: 1050, sectionId: 's',
+    id: 'legacy-post-work', templateId: 't', kind: 'slot', name: 'Post work', position: 1050, sectionId: 'post-work',
   });
+});
+
+test('a slot row with a stale name cell reads with its section\'s name', () => {
+  const store = createWatodoStore();
+  store.setRow('sections', 'bedtime', { name: 'Night', position: 0 });
+  store.setRow('items', 'bedtime-slot', {
+    templateId: 't', kind: 'slot', name: 'Old name', position: 0, sectionId: 'bedtime',
+  });
+  store.setRow('items', 'bedtime-no-name', { templateId: 't', kind: 'slot', position: 1, sectionId: 'bedtime' });
+
+  expect(readSnapshot(store).items).toEqual([
+    { id: 'bedtime-slot', templateId: 't', kind: 'slot', name: 'Night', position: 0, sectionId: 'bedtime' },
+    { id: 'bedtime-no-name', templateId: 't', kind: 'slot', name: 'Night', position: 1, sectionId: 'bedtime' },
+  ]);
+});
+
+test('a slot whose section does not exist, or that has no section, is skipped', () => {
+  const store = createWatodoStore();
+  store.setRow('sections', 'bedtime', { name: 'Bedtime', position: 0 });
+  store.setRow('items', 'ghost-section', { templateId: 't', kind: 'slot', name: 'Gone', position: 0, sectionId: 'nowhere' });
+  store.setRow('items', 'no-section', { templateId: 't', kind: 'slot', name: 'Lost', position: 1 });
+  store.setRow('items', 'kept', { templateId: 't', kind: 'slot', position: 2, sectionId: 'bedtime' });
+
+  expect(readSnapshot(store).items.map(item => item.id)).toEqual(['kept']);
 });
 
 test('a day row with only the retired earlyItemId reads as a day without it', () => {

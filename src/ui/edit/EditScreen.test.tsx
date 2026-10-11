@@ -2,8 +2,8 @@
 import { fireEvent, screen, within } from '@testing-library/react'
 import { describe, expect, test } from 'vitest'
 import {
-  addLabel, addSection, createTemplate, createWatodoStore, finishSetup, readSnapshot,
-  setUpStarter, type WatodoStore,
+  addLabel, addSection, blankDraft, createWatodoStore, finishSetup, readSnapshot, saveTemplate,
+  setUpStarter, type Id, type WatodoStore,
 } from '@/domain'
 import { renderWithWatodo } from '@/ui/testing'
 import { EditScreen } from './EditScreen'
@@ -17,6 +17,11 @@ function finishedStore(): WatodoStore {
 
 function renderEdit(store: WatodoStore = finishedStore()) {
   return renderWithWatodo(<EditScreen />, { store })
+}
+
+/** Adds a template with no steps under the first label. */
+function addTemplate(store: WatodoStore, name: string): Id {
+  return saveTemplate(store, { ...blankDraft(readSnapshot(store)), name })
 }
 
 /** The li that holds the field showing this value. */
@@ -33,11 +38,19 @@ function listedNames(store: WatodoStore, sectionName: string): string[] {
     .map(listing => snap.activities.find(a => a.id === listing.activityId)?.name ?? '')
 }
 
-describe('Activities menu', () => {
-  test('shows each section with its activities and that Basic day uses Post work', () => {
+describe('Slots', () => {
+  test('the first part is headed Slots, with the one-sentence explanation', () => {
     renderEdit()
 
-    expect(screen.getByRole('heading', { name: 'Activities menu' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Slots' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Activities menu' })).toBeNull()
+    expect(screen.getByText('Each slot has one list of activities, shared by every template that uses it.'))
+      .toBeInTheDocument()
+  })
+
+  test('shows each slot with its activities and that Basic day uses Post work', () => {
+    renderEdit()
+
     const postWork = within(screen.getByRole('region', { name: 'Post work' }))
     for (const name of ['Gym', 'Walk', 'Read']) {
       expect(postWork.getByDisplayValue(name)).toBeInTheDocument()
@@ -45,7 +58,7 @@ describe('Activities menu', () => {
     expect(postWork.getByText('Used by: Basic day')).toBeInTheDocument()
   })
 
-  test('a section no slot points at says so', () => {
+  test('a slot no template uses says so', () => {
     const store = finishedStore()
     addSection(store, 'Morning')
     renderEdit(store)
@@ -65,7 +78,7 @@ describe('Activities menu', () => {
     expect(listedNames(store, 'Post work')).toContain('Yoga')
   })
 
-  test('Remove takes the activity out of the section', () => {
+  test('Remove takes the activity out of the slot', () => {
     const { store } = renderEdit()
     const walk = rowOf('Walk')
 
@@ -75,7 +88,7 @@ describe('Activities menu', () => {
     expect(listedNames(store, 'Post work')).not.toContain('Walk')
   })
 
-  test('renaming the section changes its name in the snapshot', () => {
+  test('renaming the slot changes its name in the snapshot', () => {
     const { store } = renderEdit()
     const postWork = within(screen.getByRole('region', { name: 'Post work' }))
     const nameField = postWork.getByRole('textbox', { name: 'Section name' })
@@ -97,14 +110,56 @@ describe('Activities menu', () => {
     expect(readSnapshot(store).activities.map(a => a.name)).toContain('Run')
   })
 
-  test('Add section creates a section at the end of the menu', () => {
+  test('Add slot creates a slot at the end', () => {
     const { store } = renderEdit()
-    const field = screen.getByRole('textbox', { name: 'New section name' })
+    const field = screen.getByRole('textbox', { name: 'Slot name' })
 
     fireEvent.change(field, { target: { value: 'Morning' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Add section' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add slot' }))
 
     expect(readSnapshot(store).sections.map(s => s.name)).toEqual(['Post work', 'Post dinner', 'Bedtime', 'Morning'])
+  })
+
+  test('Delete slot on Post work opens a dialog naming Basic day', () => {
+    renderEdit()
+
+    fireEvent.click(within(screen.getByRole('region', { name: 'Post work' })).getByRole('button', { name: 'Delete slot' }))
+
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: 'Delete "Post work"?' })).toBeInTheDocument()
+    expect(within(dialog).getByText('It will be removed from: Basic day.')).toBeInTheDocument()
+  })
+
+  test('confirming Delete slot removes the slot from the snapshot and from the template', () => {
+    const { store } = renderEdit()
+    fireEvent.click(within(screen.getByRole('region', { name: 'Post work' })).getByRole('button', { name: 'Delete slot' }))
+
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete slot' }))
+
+    const snap = readSnapshot(store)
+    expect(snap.sections.map(s => s.name)).not.toContain('Post work')
+    expect(snap.items.some(item => item.kind === 'slot' && item.name === 'Post work')).toBe(false)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  test('Cancel in the Delete slot dialog keeps the slot', () => {
+    const { store } = renderEdit()
+    fireEvent.click(within(screen.getByRole('region', { name: 'Post work' })).getByRole('button', { name: 'Delete slot' }))
+
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }))
+
+    expect(readSnapshot(store).sections.map(s => s.name)).toContain('Post work')
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  test('deleting a slot no template uses says so in its dialog', () => {
+    const store = finishedStore()
+    addSection(store, 'Morning')
+    renderEdit(store)
+
+    fireEvent.click(within(screen.getByRole('region', { name: 'Morning' })).getByRole('button', { name: 'Delete slot' }))
+
+    expect(within(screen.getByRole('dialog')).getByText('No template uses it.')).toBeInTheDocument()
   })
 })
 
@@ -149,24 +204,65 @@ describe('Labels', () => {
 })
 
 describe('Templates', () => {
-  test('Copy on Basic day creates a second template with the same items and opens the editor', () => {
+  test('Copy on Basic day opens the editor on a copy, and creates nothing until Save', () => {
     const { store } = renderEdit()
-    const basicCount = readSnapshot(store).items.length
-    const basic = templateRow('Basic day')
+    const before = readSnapshot(store)
 
-    fireEvent.click(within(basic).getByRole('button', { name: 'Copy' }))
+    fireEvent.click(within(templateRow('Basic day')).getByRole('button', { name: 'Copy' }))
+
+    expect(screen.getByRole('heading', { name: 'New template' })).toBeInTheDocument()
+    expect(readSnapshot(store)).toEqual(before)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     const snap = readSnapshot(store)
     expect(snap.templates.map(t => t.name)).toEqual(['Basic day', 'Basic day copy'])
     const copy = snap.templates.find(t => t.name === 'Basic day copy')
-    expect(snap.items.filter(item => item.templateId === copy?.id)).toHaveLength(basicCount)
+    expect(snap.items.filter(item => item.templateId === copy?.id)).toHaveLength(6)
+  })
+
+  test('Edit on Basic day, rename and Save renames the template and keeps its id', () => {
+    const { store } = renderEdit()
+    const basicId = readSnapshot(store).templates[0].id
+
+    fireEvent.click(within(templateRow('Basic day')).getByRole('button', { name: 'Edit' }))
     expect(screen.getByRole('heading', { name: 'Edit template' })).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Weekend' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(readSnapshot(store).templates).toHaveLength(1)
+    expect(readSnapshot(store).templates[0]).toMatchObject({ id: basicId, name: 'Weekend' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  test('New template, Office day, Save adds one template that reuses the Post work slot', () => {
+    const { store } = renderEdit()
+    const postWorkId = readSnapshot(store).sections.find(s => s.name === 'Post work')!.id
+    const sectionsBefore = readSnapshot(store).sections.length
+
+    fireEvent.click(screen.getByRole('button', { name: 'New template' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Office day' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    const snap = readSnapshot(store)
+    expect(snap.templates.map(t => t.name)).toEqual(['Basic day', 'Office day'])
+    const office = snap.templates.find(t => t.name === 'Office day')
+    const postWorkSteps = snap.items.filter(item => item.templateId === office?.id && item.sectionId === postWorkId)
+    expect(postWorkSteps).toHaveLength(1)
+    expect(snap.sections).toHaveLength(sectionsBefore)
+  })
+
+  test('New template is enabled even with no labels', () => {
+    const store = createWatodoStore()
+    finishSetup(store)
+    renderEdit(store)
+
+    expect(screen.getByRole('button', { name: 'New template' })).toBeEnabled()
   })
 
   test('Make default moves the default badge to that template', () => {
     const store = finishedStore()
-    const workDay = readSnapshot(store).labels[0].id
-    createTemplate(store, { name: 'Weekend', labelId: workDay })
+    addTemplate(store, 'Weekend')
     renderEdit(store)
     const weekend = templateRow('Weekend')
     const basic = templateRow('Basic day')
@@ -181,8 +277,7 @@ describe('Templates', () => {
 
   test('deleting the default with another template asks which takes over, then deletes it', () => {
     const store = finishedStore()
-    const workDay = readSnapshot(store).labels[0].id
-    const weekendId = createTemplate(store, { name: 'Weekend', labelId: workDay })
+    const weekendId = addTemplate(store, 'Weekend')
     renderEdit(store)
 
     fireEvent.click(within(templateRow('Basic day')).getByRole('button', { name: 'Delete' }))

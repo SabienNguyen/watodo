@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { confirmDay, createTemplate, nowView, type Id, type PendingLog } from '@/domain'
+import { confirmDay, nowView, type Id, type PendingLog, type TemplateDraft } from '@/domain'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useNowDate, useSnapshot, useWatodo } from '@/ui/hooks'
+import { StarterPicker } from '@/ui/edit/StarterPicker'
 import { TemplateEditor } from '@/ui/edit/TemplateEditor'
 
 export function DayPicker({ open, pending, onClose, onDone }: {
@@ -17,8 +18,9 @@ export function DayPicker({ open, pending, onClose, onDone }: {
   const now = useNowDate()
   const view = nowView(snap, now)
   const guessId = view.guess.templateId
-  // Set while the editor is open for a new template. The picker is hidden meanwhile; the pending tap stays with the caller.
-  const [editingId, setEditingId] = useState<Id | null>(null)
+  // The starter picker and the editor are open over this list, which is hidden meanwhile.
+  const [picking, setPicking] = useState(false)
+  const [draft, setDraft] = useState<TemplateDraft | null>(null)
 
   const choose = (templateId: Id) => {
     const entryId = confirmDay(store, clock, templateId, pending)
@@ -26,19 +28,10 @@ export function DayPicker({ open, pending, onClose, onDone }: {
     onClose()
   }
 
-  const guessed = snap.templates.find(template => template.id === guessId)
-  const newLabelId = guessed?.labelId ?? snap.labels[0]?.id
-
-  const newTemplate = () => {
-    if (newLabelId === undefined) return
-    setEditingId(createTemplate(store, { name: 'New template', labelId: newLabelId, copyFrom: guessed?.id }))
-  }
-
-  // The editor closed: confirm today with the new template, logging the pending tap, then close the picker.
-  const finishEditing = () => {
-    if (editingId === null) return
-    const entryId = confirmDay(store, clock, editingId, pending)
-    setEditingId(null)
+  // Saved: confirm today with the new template, logging the pending tap, then close.
+  const saved = (templateId: Id) => {
+    setDraft(null)
+    const entryId = confirmDay(store, clock, templateId, pending)
     onDone?.(entryId)
     onClose()
   }
@@ -58,7 +51,10 @@ export function DayPicker({ open, pending, onClose, onDone }: {
 
   return (
     <>
-      <Dialog open={open && editingId === null} onOpenChange={next => { if (!next) onClose() }}>
+      <Dialog
+        open={open && !picking && draft === null}
+        onOpenChange={next => { if (!next) onClose() }}
+      >
         <DialogContent aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>{pending ? 'Which kind of day is today?' : "Switch today's template"}</DialogTitle>
@@ -91,9 +87,7 @@ export function DayPicker({ open, pending, onClose, onDone }: {
             </section>
           ))}
 
-          <Button variant="outline" disabled={newLabelId === undefined} onClick={newTemplate}>
-            New template
-          </Button>
+          <Button variant="outline" onClick={() => setPicking(true)}>New template</Button>
 
           <div className="flex justify-end">
             <Button variant="ghost" onClick={onClose}>Cancel</Button>
@@ -101,8 +95,17 @@ export function DayPicker({ open, pending, onClose, onDone }: {
         </DialogContent>
       </Dialog>
 
-      {editingId !== null && (
-        <TemplateEditor key={editingId} templateId={editingId} onClose={finishEditing} />
+      <StarterPicker
+        open={picking}
+        onPick={picked => {
+          setPicking(false)
+          setDraft(picked)
+        }}
+        onClose={() => setPicking(false)}
+      />
+
+      {draft !== null && (
+        <TemplateEditor draft={draft} onSaved={saved} onCancel={() => setDraft(null)} />
       )}
     </>
   )

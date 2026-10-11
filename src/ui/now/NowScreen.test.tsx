@@ -4,7 +4,8 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import { toast } from 'sonner'
 import { Toaster } from '@/components/ui/sonner'
 import {
-  createWatodoStore, deleteItem, finishSetup, readSnapshot, setUpStarter, type Clock, type WatodoStore,
+  createWatodoStore, draftFromTemplate, finishSetup, readSnapshot, saveTemplate, setUpStarter,
+  type Clock, type WatodoStore,
 } from '@/domain'
 import { renderWithWatodo } from '@/ui/testing'
 import { NowScreen } from './NowScreen'
@@ -132,7 +133,10 @@ describe('NowScreen', () => {
 
   test('a template with no slots says so and points to Edit', () => {
     const store = finishedStore()
-    for (const item of readSnapshot(store).items.filter(i => i.kind === 'slot')) deleteItem(store, item.id)
+    const snap = readSnapshot(store)
+    const draft = draftFromTemplate(snap, snap.defaultTemplateId as string, 'edit')
+    if (draft === null) throw new Error('no default template')
+    saveTemplate(store, { ...draft, steps: draft.steps.filter(step => step.kind === 'fixed') })
 
     renderNow({ store, clock: MONDAY_1745 })
 

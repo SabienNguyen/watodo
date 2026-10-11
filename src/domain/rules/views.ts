@@ -26,6 +26,18 @@ export interface ProgressView {
   bySection: { sectionId: Id; count: number }[]
 }
 
+/** The templates that have a slot of this section, in position order, each once. */
+export function templatesUsingSection(snap: Snapshot, sectionId: Id): Template[] {
+  const using = new Set(
+    snap.items
+      .filter(item => item.kind === 'slot' && item.sectionId === sectionId)
+      .map(item => item.templateId),
+  )
+  return snap.templates
+    .filter(template => using.has(template.id))
+    .sort((a, b) => a.position - b.position)
+}
+
 /** The activities listed in a section, in listing position order. */
 export function sectionActivities(snap: Snapshot, sectionId: Id): Activity[] {
   return snap.listings

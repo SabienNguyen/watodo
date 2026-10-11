@@ -5,7 +5,7 @@ import {
 } from './logging';
 import { journalByDay, nowView, noonOf, type Id } from './rules';
 import { readSnapshot } from './store';
-import { createTemplate } from './templates';
+import { saveTemplate } from './templates';
 import { at, basicDay } from './testing';
 
 function pendingOf(result: LogResult): PendingLog {
@@ -62,7 +62,7 @@ test('an activity not listed in the current slot, or a template with no slots, i
   expect(logActivity(store, clock, activityId('Journal'))).toEqual({ status: 'not-available' });
   expect(readSnapshot(store).journal).toHaveLength(0);
 
-  const empty = createTemplate(store, { name: 'Empty', labelId });
+  const empty = saveTemplate(store, { name: 'Empty', label: { id: labelId }, steps: [] });
   confirmDay(store, clock, empty);
   expect(logActivity(store, clock, activityId('Gym'))).toEqual({ status: 'not-available' });
 });
@@ -142,7 +142,7 @@ test('confirming a different template clears a chosen slot that belongs to the o
   confirmDay(store, clock, templateId);
   expect(readSnapshot(store).days[0].chosenItemId).toBe(itemId('Bedtime'));
 
-  const short = createTemplate(store, { name: 'Short', labelId });
+  const short = saveTemplate(store, { name: 'Short', label: { id: labelId }, steps: [] });
   confirmDay(store, clock, short);
   expect(readSnapshot(store).days).toEqual([{ day: '2026-10-12', templateId: short }]);
 });

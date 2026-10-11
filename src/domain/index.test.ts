@@ -7,12 +7,20 @@ test('re-exports the domain interface and the rules', () => {
     'setupState', 'setUpStarter', 'finishSetup',
     'logActivity', 'confirmDay', 'undoLast', 'goToSlot', 'deleteEntry', 'addPastEntry', 'editEntry', 'setDayNote',
     'addSection', 'renameSection', 'deleteSection', 'addActivityToSection', 'removeActivityFromSection', 'renameActivity',
-    'addLabel', 'renameLabel', 'setLabelWeekdays', 'deleteLabel', 'createTemplate', 'renameTemplate',
-    'setTemplateLabel', 'setDefaultTemplate', 'deleteTemplate', 'addItem', 'updateItem', 'moveItem', 'deleteItem',
+    'addLabel', 'renameLabel', 'setLabelWeekdays', 'deleteLabel', 'saveTemplate',
+    'setDefaultTemplate', 'deleteTemplate',
     'nowView', 'fullDayView', 'journalByDay', 'progress', 'dotStrip', 'guessTemplate', 'positionAt', 'lastDone',
-    'dayKeyOf', 'noonOf',
+    'dayKeyOf', 'noonOf', 'templatesUsingSection', 'STARTERS', 'draftFromStarter', 'draftFromTemplate',
+    'blankDraft', 'moveStep',
   ];
   for (const name of names) {
     expect(domain[name], name).toBeDefined();
   }
 });
+
+test('no longer exports the item-by-item template functions that saveTemplate replaces', () => {
+  const removed = ['createTemplate', 'renameTemplate', 'setTemplateLabel', 'addItem', 'updateItem', 'moveItem', 'deleteItem']
+  for (const name of removed) {
+    expect(name in domain, name).toBe(false)
+  }
+})

@@ -10,8 +10,8 @@ TypeScript, React + Vite, Tailwind, shadcn/ui, TinyBase (`MergeableStore`, saved
 
 ## Concepts
 
-- **Template**: the shape of one type of day. An ordered list of items with no times. An item is a **fixed step** (Work, Dinner: nothing to choose, display only, never logged) or a **slot** (Post work: points at exactly one section).
-- **Section**: a named group in the activities menu. Sections are shared: every template whose slot points at a section offers the same activities. No per-template overrides.
+- **Template**: the shape of one type of day. An ordered list of items with no times. An item is a **fixed step** (Work, Dinner: nothing to choose, display only, never logged) or a **slot** (Post work).
+- **Slot**: a named list of activities, such as Post work with Gym, Walk and Read. A slot and its activity list are one thing: every template that includes the Post work slot shows the same activities, so a list is only ever filled out once. Renaming a slot renames it in every template. The same slot can appear more than once in a template. (In the code and stored data a slot's list is called a section.)
 - **Activity**: defined once, can be listed in several sections. "Last done" is shared across sections.
 - **Label**: a user-created name for a kind of day (Work day, Weekend) with the weekdays it usually covers. Each template has exactly one label; a label can have several templates.
 - **Default template**: one template is always the default, used when no label covers today.
@@ -45,13 +45,16 @@ The app works out the current slot from what you last did, not from the clock. F
 - **Full day**: in the Journal, today's section has a `Show full day` control that expands today's whole template in order, fixed steps and slots, with no times and the current slot highlighted. Nothing in it can be tapped. It is collapsed by default. There is no separate Day tab and the Now screen does not show it; the tabs are Now, Journal, Progress, Edit.
 - **Journal**: entries by day, newest first, in the order they were logged, with the day's template and no times. Entries can be deleted, have their note and duration edited, and be added for earlier days. Each day has a free-text note.
 - **Progress**: counts per activity and per section over 7, 30 or 90 days, and a 4-week dot strip per activity.
-- **Edit**: sections and their activities; labels and their weekdays; templates (create, copy, rename, delete, set default, add, remove and reorder items).
-- **First launch**: a required short tutorial. It creates a basic day (one label, one template, a starter menu), lets you adjust it, and only then opens the Now screen.
+- **Edit**: slots and their activities; labels and their weekdays; templates (new from a starter, copy, edit, delete, set default).
+- **Creating a template**: `New template` offers starters (Office day, Work from home, School day, Weekend, Day off), a copy of any of your own templates, or Blank. Picking one adds nothing to your templates: it opens the template editor on a draft. The template exists only once you press Save; Cancel discards the draft. Copy and Edit work the same way: changes apply on Save. A starter's slots reuse your existing slots of the same name; slots you do not have yet are created on Save with a few suggested activities.
+- **Template editor**: name, label, and the ordered steps. Steps are reordered by dragging. A step is a fixed step with a name, or a slot chosen from your slots or created by typing a new name.
+- **First launch**: a required short tutorial. You pick a starter, adjust it in the template editor, and Save; only then does the Now screen open.
 
 ### Deleting
 - Deleting the default template asks which template becomes the default. Deleting the last template restores the basic day as the default. No other template delete is restricted.
 - A label can only be deleted when no template uses it.
-- Deleting an activity from a section keeps its journal history.
+- Deleting a slot asks for confirmation, naming the templates that use it, and removes it from those templates. Journal entries logged in it are kept.
+- Removing an activity from a slot keeps its journal history.
 
 ## Code structure
 

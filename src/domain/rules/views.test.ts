@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'vitest'
-import { dotStrip, fullDayView, journalByDay, nowView, progress, sectionActivities } from './views'
+import {
+  dotStrip, fullDayView, journalByDay, nowView, progress, sectionActivities, templatesUsingSection,
+} from './views'
 import type {
-  Activity, DayRecord, JournalEntry, Listing, Section, Snapshot, TemplateItem,
+  Activity, DayRecord, JournalEntry, Listing, Section, Snapshot, Template, TemplateItem,
 } from './types'
 
 const at = (year: number, month: number, day: number, hours: number, minutes: number) =>
@@ -274,5 +276,29 @@ describe('sectionActivities', () => {
 
   test('an unknown section gives an empty array', () => {
     expect(sectionActivities(fixture(), 'nope')).toEqual([])
+  })
+})
+
+describe('templatesUsingSection', () => {
+  test('lists the templates with a slot of the section by position, each once even when it uses it twice', () => {
+    const templates: Template[] = [
+      { id: 'c', name: 'C', labelId: 'work', position: 2 },
+      { id: 'b', name: 'B', labelId: 'work', position: 1 },
+      { id: 'a', name: 'A', labelId: 'work', position: 0 },
+    ]
+    const items: TemplateItem[] = [
+      { id: 'c1', templateId: 'c', kind: 'slot', name: 'Free time', position: 0, sectionId: 'x' },
+      { id: 'b1', templateId: 'b', kind: 'slot', name: 'Other', position: 0, sectionId: 'y' },
+      { id: 'a1', templateId: 'a', kind: 'slot', name: 'Free time', position: 0, sectionId: 'x' },
+      { id: 'a2', templateId: 'a', kind: 'slot', name: 'Free time', position: 1, sectionId: 'x' },
+      { id: 'a3', templateId: 'a', kind: 'fixed', name: 'Dinner', position: 2 },
+    ]
+    const snap: Snapshot = {
+      labels: [], templates, items, sections: [], activities: [],
+      listings: [], journal: [], days: [], defaultTemplateId: null,
+    }
+    expect(templatesUsingSection(snap, 'x').map(template => template.id)).toEqual(['a', 'c'])
+    expect(templatesUsingSection(snap, 'y').map(template => template.id)).toEqual(['b'])
+    expect(templatesUsingSection(snap, 'nowhere')).toEqual([])
   })
 })

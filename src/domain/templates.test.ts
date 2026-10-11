@@ -1,11 +1,12 @@
 import { expect, test } from 'vitest';
-import { confirmDay } from './logging';
+import { confirmDay, logActivity } from './logging';
 import { deleteSection } from './menu';
-import { nowView, type TemplateItem } from './rules';
-import { readSnapshot } from './store';
 import {
-  addItem, addLabel, createTemplate, deleteItem, deleteLabel, deleteTemplate, moveItem, renameTemplate,
-  setDefaultTemplate, setLabelWeekdays, setTemplateLabel, updateItem,
+  draftFromStarter, draftFromTemplate, moveStep, nowView, sectionActivities, type DraftStep, type Id,
+} from './rules';
+import { createWatodoStore, readSnapshot } from './store';
+import {
+  addLabel, deleteLabel, deleteTemplate, saveTemplate, setDefaultTemplate, setLabelWeekdays,
 } from './templates';
 import { at, basicDay } from './testing';
 
@@ -13,36 +14,25 @@ const BASIC_ORDER = [
   'Wake up, brush teeth, get ready', 'Work', 'Post work', 'Dinner', 'Post dinner', 'Bedtime',
 ];
 
-function shape(items: TemplateItem[]) {
-  return items.map(({ kind, name, position, sectionId }) => ({ kind, name, position, sectionId }));
-}
-
 function orderOf(store: ReturnType<typeof basicDay>['store'], templateId: string): string[] {
   return readSnapshot(store).items.filter(item => item.templateId === templateId).map(item => item.name);
 }
 
-test('createTemplate with copyFrom copies every item with new ids, the same positions and sections', () => {
-  const { store, labelId, templateId } = basicDay();
-  const copy = createTemplate(store, { name: 'Copy', labelId, copyFrom: templateId });
-
-  const items = readSnapshot(store).items;
-  const original = items.filter(item => item.templateId === templateId);
-  const copied = items.filter(item => item.templateId === copy);
-  expect(copied).toHaveLength(6);
-  expect(copied.some(item => original.some(o => o.id === item.id))).toBe(false);
-  expect(shape(copied)).toEqual(shape(original));
-  expect(copied.map(item => item.name)).toEqual(BASIC_ORDER);
-});
+function editDraftOf(store: ReturnType<typeof basicDay>['store'], templateId: Id) {
+  const draft = draftFromTemplate(readSnapshot(store), templateId, 'edit');
+  if (draft === null) throw new Error('no such template');
+  return draft;
+}
 
 test('the first template becomes the default, later ones do not take it', () => {
   const { store, labelId, templateId } = basicDay();
-  createTemplate(store, { name: 'Short', labelId });
+  saveTemplate(store, { name: 'Short', label: { id: labelId }, steps: [] });
   expect(readSnapshot(store).defaultTemplateId).toBe(templateId);
 });
 
 test('deleting the default with another template present asks for a new default and changes nothing', () => {
   const { store, labelId, templateId } = basicDay();
-  createTemplate(store, { name: 'Short', labelId });
+  saveTemplate(store, { name: 'Short', label: { id: labelId }, steps: [] });
 
   expect(deleteTemplate(store, templateId)).toBe('needs-new-default');
   const snap = readSnapshot(store);
@@ -53,7 +43,7 @@ test('deleting the default with another template present asks for a new default 
 
 test('deleting the default with a new default names the replacement and deletes the template', () => {
   const { store, labelId, templateId } = basicDay();
-  const short = createTemplate(store, { name: 'Short', labelId });
+  const short = saveTemplate(store, { name: 'Short', label: { id: labelId }, steps: [] });
 
   expect(deleteTemplate(store, templateId, short)).toBe('deleted');
   const snap = readSnapshot(store);
@@ -105,106 +95,29 @@ test('labels keep their weekdays, sorted and without repeats', () => {
   expect(readSnapshot(store).labels[0].weekdays).toEqual([5, 6]);
 });
 
-test('templates can be renamed and moved to another label', () => {
+test('a template can be renamed and moved to another label by saving its edit draft', () => {
   const { store, templateId } = basicDay();
   const weekend = addLabel(store, 'Weekend');
-  renameTemplate(store, templateId, 'Office day');
-  setTemplateLabel(store, templateId, weekend);
 
+  const id = saveTemplate(store, { ...editDraftOf(store, templateId), name: 'Office day', label: { id: weekend } });
+
+  expect(id).toBe(templateId);
   expect(readSnapshot(store).templates[0]).toMatchObject({ name: 'Office day', labelId: weekend });
 });
 
 test('setDefaultTemplate moves the default', () => {
   const { store, labelId, templateId } = basicDay();
-  const short = createTemplate(store, { name: 'Short', labelId });
+  const short = saveTemplate(store, { name: 'Short', label: { id: labelId }, steps: [] });
   setDefaultTemplate(store, short);
   expect(readSnapshot(store).defaultTemplateId).toBe(short);
   expect(readSnapshot(store).defaultTemplateId).not.toBe(templateId);
 });
 
-test('addItem appends the item after the highest position in its template, with the name trimmed', () => {
-  const { store, templateId, labelId, sectionId } = basicDay();
-  const late = addItem(store, templateId, { kind: 'slot', name: ' Late ', sectionId: sectionId('Bedtime') });
-  expect(readSnapshot(store).items.filter(item => item.templateId === templateId).at(-1)).toEqual({
-    id: late, templateId, kind: 'slot', name: 'Late', position: 6, sectionId: sectionId('Bedtime'),
-  });
-
-  const empty = createTemplate(store, { name: 'Empty', labelId });
-  const first = addItem(store, empty, { kind: 'fixed', name: 'Rest' });
-  expect(readSnapshot(store).items.find(item => item.id === first)).toMatchObject({ position: 0 });
-});
-
-test('moveItem swaps an item with its neighbour, up or down', () => {
-  const { store, templateId, itemId } = basicDay();
-
-  moveItem(store, itemId('Work'), 'up');
-  expect(orderOf(store, templateId).slice(0, 2)).toEqual(['Work', 'Wake up, brush teeth, get ready']);
-
-  moveItem(store, itemId('Work'), 'down');
-  expect(orderOf(store, templateId)).toEqual(BASIC_ORDER);
-
-  moveItem(store, itemId('Post work'), 'down');
-  expect(orderOf(store, templateId)).toEqual([
-    'Wake up, brush teeth, get ready', 'Work', 'Dinner', 'Post work', 'Post dinner', 'Bedtime',
-  ]);
-});
-
-test('moveItem at either end of the template does nothing', () => {
-  const { store, templateId, itemId } = basicDay();
-  const before = readSnapshot(store).items;
-
-  moveItem(store, itemId('Wake up, brush teeth, get ready'), 'up');
-  moveItem(store, itemId('Bedtime'), 'down');
-
-  expect(readSnapshot(store).items).toEqual(before);
-  expect(orderOf(store, templateId)).toEqual(BASIC_ORDER);
-});
-
-test('moveItem never swaps with an item of another template', () => {
-  const { store, templateId, labelId } = basicDay();
-  const other = createTemplate(store, { name: 'Short', labelId });
-  const solo = addItem(store, other, { kind: 'fixed', name: 'Solo' });
-  addItem(store, other, { kind: 'fixed', name: 'Two' });
-
-  moveItem(store, solo, 'down');
-  expect(orderOf(store, other)).toEqual(['Two', 'Solo']);
-  expect(orderOf(store, templateId)).toEqual(BASIC_ORDER);
-
-  moveItem(store, solo, 'down');
-  expect(orderOf(store, other)).toEqual(['Two', 'Solo']);
-  expect(orderOf(store, templateId)).toEqual(BASIC_ORDER);
-});
-
-test('updateItem renames an item, and making a slot fixed removes its section', () => {
-  const { store, itemId, sectionId } = basicDay();
-  const postWork = itemId('Post work');
-  updateItem(store, postWork, { name: 'Commute home' });
-  expect(readSnapshot(store).items.find(item => item.id === postWork)).toMatchObject({
-    name: 'Commute home', kind: 'slot', sectionId: sectionId('Post work'),
-  });
-
-  updateItem(store, postWork, { kind: 'fixed' });
-  expect(readSnapshot(store).items.find(item => item.id === postWork)?.sectionId).toBeUndefined();
-});
-
-test('updateItem with sectionId null removes the section of a slot', () => {
-  const { store, itemId } = basicDay();
-  const bedtime = itemId('Bedtime');
-  updateItem(store, bedtime, { sectionId: null });
-  expect(readSnapshot(store).items.find(item => item.id === bedtime))
-    .toMatchObject({ kind: 'slot' });
-  expect(readSnapshot(store).items.find(item => item.id === bedtime)?.sectionId).toBeUndefined();
-});
-
-test('deleteItem removes one item from the template', () => {
-  const { store, templateId, itemId } = basicDay();
-  deleteItem(store, itemId('Bedtime'));
-  expect(orderOf(store, templateId)).toHaveLength(5);
-});
-
 test('guessing: a second template under Work day is guessed on Tuesday once it was confirmed on Monday', () => {
-  const { store, labelId, templateId } = basicDay();
-  const second = createTemplate(store, { name: 'Short day', labelId, copyFrom: templateId });
+  const { store, templateId } = basicDay();
+  const draft = draftFromTemplate(readSnapshot(store), templateId, 'copy');
+  if (draft === null) throw new Error('no such template');
+  const second = saveTemplate(store, { ...draft, name: 'Short day' });
 
   const monday = () => at(9, 0);
   confirmDay(store, monday, second);
@@ -213,4 +126,199 @@ test('guessing: a second template under Work day is guessed on Tuesday once it w
   const view = nowView(readSnapshot(store), tuesday);
   expect(view.guess).toMatchObject({ templateId: second, confirmed: false, reason: 'label' });
   expect(view.template?.id).toBe(second);
+});
+
+test('saving the office starter next to the basic day reuses the Work day label and the existing sections', () => {
+  const { store, labelId, templateId, sectionId } = basicDay();
+  const draft = draftFromStarter(readSnapshot(store), 'office');
+  if (draft === null) throw new Error('no such starter');
+  expect(draft.label).toEqual({ id: labelId });
+
+  const office = saveTemplate(store, draft);
+
+  const snap = readSnapshot(store);
+  expect(snap.labels).toHaveLength(1);
+  expect(snap.templates.find(template => template.id === office)).toMatchObject({ name: 'Office day', labelId });
+  expect(snap.sections.map(section => section.name)).toEqual(['Post work', 'Post dinner', 'Bedtime']);
+  expect(snap.sections.map(section => section.id)).toEqual([
+    sectionId('Post work'), sectionId('Post dinner'), sectionId('Bedtime'),
+  ]);
+  expect(snap.activities).toHaveLength(7);
+  expect(snap.listings).toHaveLength(9);
+  expect(orderOf(store, office)).toEqual([
+    'Morning routine', 'Commute', 'Work', 'Post work', 'Dinner', 'Post dinner', 'Bedtime',
+  ]);
+  expect(snap.defaultTemplateId).toBe(templateId);
+});
+
+test('saving the weekend starter creates the Weekend label, a Free time section, and a Free time slot twice', () => {
+  const { store, activityId } = basicDay();
+  const weekend = saveTemplate(store, draftFromStarter(readSnapshot(store), 'weekend')!);
+
+  const snap = readSnapshot(store);
+  expect(snap.labels.find(label => label.name === 'Weekend')).toMatchObject({ weekdays: [5, 6] });
+
+  const freeTime = snap.sections.find(section => section.name === 'Free time');
+  expect(freeTime).toBeDefined();
+  expect(sectionActivities(snap, freeTime!.id).map(activity => activity.name))
+    .toEqual(['Hike', 'Cook something new', 'Read', 'Call family']);
+  expect(snap.activities.filter(activity => activity.name === 'Read')).toEqual([
+    { id: activityId('Read'), name: 'Read' },
+  ]);
+  expect(snap.activities).toHaveLength(9);
+
+  const freeSlots = snap.items.filter(item => item.templateId === weekend && item.name === 'Free time');
+  expect(freeSlots).toHaveLength(2);
+  expect(freeSlots[0].id).not.toBe(freeSlots[1].id);
+  expect(orderOf(store, weekend)).toEqual([
+    'Morning routine', 'Free time', 'Lunch', 'Free time', 'Dinner', 'Post dinner', 'Bedtime',
+  ]);
+});
+
+test('a brand-new slot name with no suggestions creates an empty section, with the name trimmed', () => {
+  const { store, labelId } = basicDay();
+  saveTemplate(store, {
+    name: 'Errands day', label: { id: labelId }, steps: [{ kind: 'slot', slotName: '  Errands ' }],
+  });
+
+  const snap = readSnapshot(store);
+  const errands = snap.sections.find(section => section.name === 'Errands');
+  expect(errands).toBeDefined();
+  expect(snap.listings.filter(listing => listing.sectionId === errands!.id)).toEqual([]);
+  expect(snap.items.find(item => item.sectionId === errands!.id)?.name).toBe('Errands');
+});
+
+test('editing keeps the template id and the kept items\' ids, reorders, drops one step and adds one', () => {
+  const { store, templateId, itemId } = basicDay();
+  const wake = itemId('Wake up, brush teeth, get ready');
+  const work = itemId('Work');
+  const postWork = itemId('Post work');
+  const postDinner = itemId('Post dinner');
+  const bedtime = itemId('Bedtime');
+  const dinner = itemId('Dinner');
+
+  const draft = editDraftOf(store, templateId);
+  const steps: DraftStep[] = [
+    ...moveStep(draft.steps, 1, 3).filter(step => !(step.kind === 'fixed' && step.name === 'Dinner')),
+    { kind: 'fixed', name: 'Commute' },
+  ];
+  const id = saveTemplate(store, { ...draft, name: 'Office day', steps });
+
+  expect(id).toBe(templateId);
+  const snap = readSnapshot(store);
+  expect(snap.templates[0].name).toBe('Office day');
+  expect(snap.items.filter(item => item.templateId === templateId).map(item => item.id)).toEqual([
+    wake, postWork, work, postDinner, bedtime, expect.any(String),
+  ]);
+  expect(orderOf(store, templateId)).toEqual([
+    'Wake up, brush teeth, get ready', 'Post work', 'Work', 'Post dinner', 'Bedtime', 'Commute',
+  ]);
+  expect(snap.items.some(item => item.id === dinner)).toBe(false);
+});
+
+test('a journal entry logged in a slot before an edit still maps to that slot afterwards', () => {
+  const { store, templateId, activityId, sectionId, itemId } = basicDay();
+  const clock = () => at(17, 45);
+  confirmDay(store, clock, templateId, {
+    activityId: activityId('Gym'), sectionId: sectionId('Post work'), itemId: itemId('Post work'),
+  });
+
+  const draft = editDraftOf(store, templateId);
+  saveTemplate(store, { ...draft, name: 'Office day', steps: moveStep(draft.steps, 2, 0) });
+
+  const snap = readSnapshot(store);
+  expect(snap.journal[0].itemId).toBe(itemId('Post work'));
+  expect(snap.items.some(item => item.id === snap.journal[0].itemId)).toBe(true);
+  expect(nowView(snap, at(17, 50)).position).toMatchObject({
+    item: { id: itemId('Post work'), name: 'Post work' }, reason: 'stayed',
+  });
+  expect(logActivity(store, () => at(17, 50), activityId('Walk'))).toMatchObject({ status: 'logged' });
+});
+
+test('a step whose item id names an item of another template gets a new item of its own', () => {
+  const { store, templateId, labelId, itemId } = basicDay();
+  const other = saveTemplate(store, { name: 'Other', label: { id: labelId }, steps: [] });
+  const stranger = itemId('Work');
+
+  saveTemplate(store, {
+    templateId: other,
+    name: 'Other',
+    label: { id: labelId },
+    steps: [{ kind: 'fixed', name: 'Work', itemId: stranger }],
+  });
+
+  const snap = readSnapshot(store);
+  expect(snap.items.find(item => item.id === stranger)?.templateId).toBe(templateId);
+  const otherItems = snap.items.filter(item => item.templateId === other);
+  expect(otherItems.map(item => item.name)).toEqual(['Work']);
+  expect(otherItems[0].id).not.toBe(stranger);
+});
+
+test('blank step names are skipped, and the other steps keep their order', () => {
+  const { store, labelId } = basicDay();
+  const id = saveTemplate(store, {
+    name: 'Gappy',
+    label: { id: labelId },
+    steps: [
+      { kind: 'fixed', name: '   ' },
+      { kind: 'fixed', name: 'Work' },
+      { kind: 'slot', slotName: ' ' },
+      { kind: 'slot', slotName: 'Post work' },
+    ],
+  });
+
+  expect(orderOf(store, id)).toEqual(['Work', 'Post work']);
+  expect(readSnapshot(store).items.filter(item => item.templateId === id).map(item => item.kind))
+    .toEqual(['fixed', 'slot']);
+});
+
+test('the saved template becomes the default only when there was no valid default', () => {
+  const { store, labelId, templateId } = basicDay();
+  saveTemplate(store, { name: 'Short', label: { id: labelId }, steps: [] });
+  expect(readSnapshot(store).defaultTemplateId).toBe(templateId);
+
+  const dangling = basicDay();
+  dangling.store.setValue('defaultTemplateId', 'gone');
+  const replacement = saveTemplate(dangling.store, {
+    name: 'Short', label: { id: dangling.labelId }, steps: [],
+  });
+  expect(readSnapshot(dangling.store).defaultTemplateId).toBe(replacement);
+
+  const empty = createWatodoStore();
+  const first = saveTemplate(empty, {
+    name: 'First', label: { newName: 'Work day', weekdays: [0, 1, 2, 3, 4] }, steps: [],
+  });
+  const snap = readSnapshot(empty);
+  expect(snap.defaultTemplateId).toBe(first);
+  expect(snap.labels).toEqual([{ id: snap.labels[0].id, name: 'Work day', weekdays: [0, 1, 2, 3, 4], position: 0 }]);
+});
+
+test('a label given by name reuses an existing label of that name, in any case', () => {
+  const { store, labelId } = basicDay();
+  const id = saveTemplate(store, {
+    name: 'Short', label: { newName: ' work DAY ', weekdays: [6] }, steps: [],
+  });
+  const snap = readSnapshot(store);
+  expect(snap.labels).toHaveLength(1);
+  expect(snap.templates.find(template => template.id === id)?.labelId).toBe(labelId);
+});
+
+test('copy mode saves a separate template and leaves the original untouched', () => {
+  const { store, templateId } = basicDay();
+  const before = readSnapshot(store).items.filter(item => item.templateId === templateId);
+  const draft = draftFromTemplate(readSnapshot(store), templateId, 'copy');
+  if (draft === null) throw new Error('no such template');
+
+  const copy = saveTemplate(store, draft);
+
+  expect(copy).not.toBe(templateId);
+  const snap = readSnapshot(store);
+  expect(snap.templates.map(template => template.name)).toEqual(['Basic day', 'Basic day copy']);
+  expect(snap.items.filter(item => item.templateId === templateId)).toEqual(before);
+  expect(orderOf(store, copy)).toEqual(BASIC_ORDER);
+  expect(snap.items.filter(item => item.templateId === copy).some(item => before.some(b => b.id === item.id)))
+    .toBe(false);
+  expect(snap.defaultTemplateId).toBe(templateId);
+  expect(snap.sections).toHaveLength(3);
+  expect(snap.activities).toHaveLength(7);
 });

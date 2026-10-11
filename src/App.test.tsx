@@ -10,18 +10,19 @@ test('renders the watodo heading', () => {
   expect(screen.getByRole('heading', { level: 1, name: 'watodo' })).toBeInTheDocument()
 })
 
-test('a new store shows the tutorial and no tab bar until Done, open watodo, then the four tabs with Now current', () => {
+test('a new store shows the tutorial and no tab bar until a starting day is saved, then the four tabs with Now current', () => {
   renderWithWatodo(<App />, { store: createWatodoStore() })
 
   expect(screen.getByRole('heading', { level: 1, name: 'watodo' })).toBeInTheDocument()
   expect(screen.queryByRole('navigation')).toBeNull()
 
-  fireEvent.click(screen.getByRole('button', { name: 'Start with the basic day' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Choose a starting day' }))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Office day' }))
 
-  expect(screen.getByRole('heading', { name: 'Make it yours' })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'New template' })).toBeInTheDocument()
   expect(screen.queryByRole('navigation')).toBeNull()
 
-  fireEvent.click(screen.getByRole('button', { name: 'Done, open watodo' }))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Save' }))
 
   const tabs = within(screen.getByRole('navigation'))
   const buttons = tabs.getAllByRole('button')

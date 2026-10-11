@@ -11,13 +11,13 @@ const SECTIONS: { name: string; activities: string[] }[] = [
   { name: 'Bedtime', activities: ['Journal', 'Stretch', 'Read'] },
 ];
 
-const ITEMS: { kind: 'fixed' | 'slot'; name: string; section?: string }[] = [
+const ITEMS: ({ kind: 'fixed'; name: string } | { kind: 'slot'; section: string })[] = [
   { kind: 'fixed', name: 'Wake up, brush teeth, get ready' },
   { kind: 'fixed', name: 'Work' },
-  { kind: 'slot', name: 'Post work', section: 'Post work' },
+  { kind: 'slot', section: 'Post work' },
   { kind: 'fixed', name: 'Dinner' },
-  { kind: 'slot', name: 'Post dinner', section: 'Post dinner' },
-  { kind: 'slot', name: 'Bedtime', section: 'Bedtime' },
+  { kind: 'slot', section: 'Post dinner' },
+  { kind: 'slot', section: 'Bedtime' },
 ];
 
 /**
@@ -39,13 +39,10 @@ export function addBasicDayTemplate(store: WatodoStore, labelId: Id): Id {
   }
 
   ITEMS.forEach((item, position) => {
-    store.setRow(TABLE.items, newId(), {
-      templateId,
-      kind: item.kind,
-      name: item.name,
-      position,
-      ...(item.section === undefined ? {} : { sectionId: ensureSection(store, item.section) }),
-    });
+    // A slot has no name of its own: it is named by its section.
+    store.setRow(TABLE.items, newId(), item.kind === 'fixed'
+      ? { templateId, kind: 'fixed', name: item.name, position }
+      : { templateId, kind: 'slot', position, sectionId: ensureSection(store, item.section) });
   });
   return templateId;
 }

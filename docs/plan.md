@@ -362,3 +362,91 @@ export function FullDay(): JSX.Element;
 
 ### Task 11: move the full day toggle to the Journal
 Remove the `Show full day` button and `<FullDay />` from NowScreen. Move `FullDay` and its test to `src/ui/journal/`. In JournalScreen, today's section gets the `Show full day` / `Hide full day` button.
+
+---
+
+# Change 4: slots own their activities, starters, and a draft template editor
+
+Three linked changes. (1) A slot and its activity list become one thing: a slot item has no name of its own; its name is its section's name. (2) New templates start from a starter, a copy, or blank. (3) Creating, copying and editing a template all happen on a draft that is only written on Save. See the updated `docs/spec.md`.
+
+## Changed contracts
+
+### `src/domain/rules/types.ts` (additions)
+```ts
+export type DraftStep =
+  | { kind: 'fixed'; name: string; itemId?: Id }
+  | { kind: 'slot'; slotName: string; itemId?: Id };   // itemId: the existing item this step came from, when editing
+export interface TemplateDraft {
+  templateId?: Id;                                      // set when editing an existing template
+  name: string;
+  label: { id: Id } | { newName: string; weekdays: number[] };
+  steps: DraftStep[];
+}
+```
+`TemplateItem` is unchanged; for a slot, `name` is always its section's name.
+
+### `src/domain/rules/starters.ts` (new, pure)
+```ts
+export interface Starter {
+  key: string; name: string; labelName: string; labelWeekdays: number[];
+  steps: ({ kind: 'fixed'; name: string } | { kind: 'slot'; slotName: string })[];
+}
+export const STARTERS: Starter[];
+export const SUGGESTED_ACTIVITIES: Record<string, string[]>;   // keyed by slot name
+export function draftFromStarter(snap: Snapshot, key: string): TemplateDraft | null;
+export function draftFromTemplate(snap: Snapshot, templateId: Id, mode: 'edit' | 'copy'): TemplateDraft | null;
+export function blankDraft(snap: Snapshot): TemplateDraft;
+export function moveStep(steps: DraftStep[], from: number, to: number): DraftStep[];   // returns a new array
+```
+`STARTERS`, in this order:
+- `office`: "Office day", label "Work day" [0,1,2,3,4]: fixed Morning routine, fixed Commute, fixed Work, slot Post work, fixed Dinner, slot Post dinner, slot Bedtime
+- `wfh`: "Work from home", label "Work day" [0,1,2,3,4]: fixed Morning routine, fixed Work, slot Lunch break, fixed Work, slot Post work, fixed Dinner, slot Post dinner, slot Bedtime
+- `school`: "School day", label "School day" []: fixed Morning routine, fixed School, slot After school, fixed Dinner, fixed Homework, slot Post dinner, slot Bedtime
+- `weekend`: "Weekend", label "Weekend" [5,6]: fixed Morning routine, slot Free time, fixed Lunch, slot Free time, fixed Dinner, slot Post dinner, slot Bedtime
+- `dayoff`: "Day off", label "Day off" []: fixed Morning routine, slot Free time, fixed Dinner, slot Post dinner, slot Bedtime
+
+`SUGGESTED_ACTIVITIES`: Post work: Gym, Walk, Read. Post dinner: Guitar, Call family, Read. Bedtime: Journal, Stretch, Read. Lunch break: Walk, Read. After school: Sports, Walk, Read. Free time: Hike, Cook something new, Read, Call family.
+
+- `draftFromStarter`: `name` is the starter's name; `label` is `{ id }` of an existing label whose name matches the starter's label name (case-insensitive), else `{ newName, weekdays }`; steps copied, no `itemId`s, no `templateId`. Unknown key -> `null`.
+- `draftFromTemplate`: steps from `itemsOf`, slots as `{ kind: 'slot', slotName: <section name> }`. Mode `edit`: `templateId` set and each step carries its `itemId`. Mode `copy`: no `templateId`, no `itemId`s, name `"{name} copy"`. Unknown template -> `null`.
+- `blankDraft`: name `New template`, no steps, `label` the first existing label, else `{ newName: 'Work day', weekdays: [0,1,2,3,4] }`.
+
+### `src/domain/rules/views.ts` (addition)
+```ts
+export function templatesUsingSection(snap: Snapshot, sectionId: Id): Template[]; // templates with a slot of that section, by position
+```
+
+### `src/domain/templates.ts`
+```ts
+export function saveTemplate(store: WatodoStore, draft: TemplateDraft): Id;   // creates or updates; returns the template id
+```
+Removed: `createTemplate`, `renameTemplate`, `setTemplateLabel`, `addItem`, `updateItem`, `moveItem`, `deleteItem`. Unchanged: label functions, `setDefaultTemplate`, `deleteTemplate`.
+
+`saveTemplate`, in one transaction:
+1. Label: `{ id }` is used as is; `{ newName, weekdays }` reuses an existing label with that name (case-insensitive) or creates it with those weekdays.
+2. Template: with `templateId` naming an existing template, update its name and label; otherwise create one (next position). Names are trimmed.
+3. Steps in order, `position` = index. A fixed step with a blank name and a slot step with a blank `slotName` are skipped. A slot step resolves its section by name (trimmed, case-insensitive); if none exists, create the section and, when `SUGGESTED_ACTIVITIES` has that name (case-insensitive), list those activities in it, reusing existing activities by name. A step whose `itemId` names an item of this template updates that item (kind, name, section, position), so journal entries that reference it stay linked; otherwise a new item is created.
+4. Delete this template's items that no step refers to.
+5. If no valid default template exists, make this one the default.
+
+### `src/domain/menu.ts`
+`deleteSection` also deletes every slot item that points at the section.
+
+### `src/domain/store.ts`
+`readSnapshot`: a slot item's `name` is its section's name (any stored name cell is ignored). A slot item whose section does not exist is skipped.
+
+### UI
+```tsx
+// src/ui/edit/StarterPicker.tsx
+export function StarterPicker(props: { open: boolean; onPick(draft: TemplateDraft): void; onClose(): void }): JSX.Element;
+// src/ui/edit/TemplateEditor.tsx
+export function TemplateEditor(props: { draft: TemplateDraft; onSaved(templateId: Id): void; onCancel(): void }): JSX.Element;
+```
+
+## Tasks
+
+### Task 12: slots, starters and drafts in the rules and domain
+Implement the rules and domain contracts of Change 4, with tests.
+
+### Task 13: starter picker, draft editor with dragging, and the screens that use them
+Implement the UI of Change 4: `StarterPicker`, the draft `TemplateEditor` with drag-to-reorder, and the changes to EditScreen, DayPicker and Tutorial.

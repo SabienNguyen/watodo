@@ -3,8 +3,10 @@ import {
   addActivityToSection, addSection, deleteSection, removeActivityFromSection, renameActivity, renameSection,
 } from './menu';
 import { addPastEntry } from './logging';
+import { nowView } from './rules';
 import { readSnapshot } from './store';
-import { basicDay } from './testing';
+import { saveTemplate } from './templates';
+import { at, basicDay } from './testing';
 
 test('adding an existing activity name in another section reuses the activity', () => {
   const { store, activityId, sectionId } = basicDay();
@@ -43,7 +45,7 @@ test('removing an activity from a section keeps its journal entries', () => {
   expect(snap.activities.some(activity => activity.id === activityId('Gym'))).toBe(true);
 });
 
-test('deleting a section removes its listings only', () => {
+test('deleting a section removes its listings and keeps its activities', () => {
   const { store, sectionId } = basicDay();
   deleteSection(store, sectionId('Bedtime'));
 
@@ -51,6 +53,41 @@ test('deleting a section removes its listings only', () => {
   expect(snap.sections.map(section => section.name)).toEqual(['Post work', 'Post dinner']);
   expect(snap.listings).toHaveLength(6);
   expect(snap.activities).toHaveLength(7);
+});
+
+test('deleting a section removes its slots from every template, and the day no longer shows them', () => {
+  const { store, labelId, templateId, sectionId, activityId } = basicDay();
+  saveTemplate(store, {
+    name: 'Short', label: { id: labelId }, steps: [{ kind: 'fixed', name: 'Dinner' }, { kind: 'slot', slotName: 'Bedtime' }],
+  });
+  addPastEntry(store, {
+    activityId: activityId('Journal'), sectionId: sectionId('Bedtime'), day: '2026-10-11',
+  });
+
+  deleteSection(store, sectionId('Bedtime'));
+
+  const snap = readSnapshot(store);
+  expect(snap.items.some(item => item.name === 'Bedtime')).toBe(false);
+  expect(snap.items.filter(item => item.templateId === templateId).map(item => item.name))
+    .toEqual(['Wake up, brush teeth, get ready', 'Work', 'Post work', 'Dinner', 'Post dinner']);
+  expect(snap.items.filter(item => item.kind === 'slot').map(item => item.name)).toEqual(['Post work', 'Post dinner']);
+  expect(nowView(snap, at(21, 0)).slots.map(slot => slot.name)).toEqual(['Post work', 'Post dinner']);
+  expect(snap.journal).toHaveLength(1);
+  expect(snap.journal[0].sectionId).toBe(sectionId('Bedtime'));
+});
+
+test('renaming a section renames its slot in every template that uses it', () => {
+  const { store, labelId, templateId, sectionId } = basicDay();
+  const short = saveTemplate(store, {
+    name: 'Short', label: { id: labelId }, steps: [{ kind: 'slot', slotName: 'Bedtime' }],
+  });
+
+  renameSection(store, sectionId('Bedtime'), 'Night');
+
+  const snap = readSnapshot(store);
+  expect(snap.items.filter(item => item.name === 'Night').map(item => item.templateId).sort())
+    .toEqual([templateId, short].sort());
+  expect(snap.items.some(item => item.name === 'Bedtime')).toBe(false);
 });
 
 test('sections and activities can be renamed', () => {

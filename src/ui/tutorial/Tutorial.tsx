@@ -1,13 +1,19 @@
-import { finishSetup, setupState, setUpStarter } from '@/domain'
+import { useState } from 'react'
+import { finishSetup, setupState, type TemplateDraft } from '@/domain'
 import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/sonner'
 import { EditScreen } from '@/ui/edit/EditScreen'
+import { StarterPicker } from '@/ui/edit/StarterPicker'
+import { TemplateEditor } from '@/ui/edit/TemplateEditor'
 import { useSnapshot, useWatodo } from '@/ui/hooks'
 
 export function Tutorial() {
   const { store } = useWatodo()
   // Subscribes to the store, so the steps change as setup moves on.
   useSnapshot()
+  // Set while the starter picker is open; the draft is the template being set up. Nothing is written until Save.
+  const [picking, setPicking] = useState(false)
+  const [draft, setDraft] = useState<TemplateDraft | null>(null)
 
   if (setupState(store) === 'new') {
     return (
@@ -17,9 +23,25 @@ export function Tutorial() {
           <p className="text-muted-foreground">watodo shows what you can do right now, and logs your pick with one tap.</p>
           <p className="text-muted-foreground">It needs one day set up first.</p>
         </div>
-        <Button className="h-14 w-full text-base" onClick={() => setUpStarter(store)}>
-          Start with the basic day
+        <Button className="h-14 w-full text-base" onClick={() => setPicking(true)}>
+          Choose a starting day
         </Button>
+
+        <StarterPicker
+          open={picking}
+          onPick={picked => {
+            setPicking(false)
+            setDraft(picked)
+          }}
+          onClose={() => setPicking(false)}
+        />
+        {draft !== null && (
+          <TemplateEditor
+            draft={draft}
+            onSaved={() => finishSetup(store)}
+            onCancel={() => setDraft(null)}
+          />
+        )}
       </section>
     )
   }

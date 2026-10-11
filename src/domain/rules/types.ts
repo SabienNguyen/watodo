@@ -22,6 +22,18 @@ export interface DayRecord {
   chosenItemId?: Id; chosenAt?: number; // a slot picked by hand, and when (epoch ms)
 }
 
+/** One step of a template being edited. A slot is named by its section, not by an item name. */
+export type DraftStep =
+  | { kind: 'fixed'; name: string; itemId?: Id }
+  | { kind: 'slot'; slotName: string; itemId?: Id };   // itemId: the existing item this step came from, when editing
+/** A template as it is being created, copied or edited. Nothing is stored until it is saved. */
+export interface TemplateDraft {
+  templateId?: Id;                                      // set when editing an existing template
+  name: string;
+  label: { id: Id } | { newName: string; weekdays: number[] };
+  steps: DraftStep[];
+}
+
 export interface Snapshot {
   labels: Label[]; templates: Template[]; items: TemplateItem[]; // items sorted by position
   sections: Section[]; activities: Activity[]; listings: Listing[];

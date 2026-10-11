@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import {
-  addActivityToSection, addLabel, addSection, createTemplate, deleteLabel, deleteSection,
-  deleteTemplate, removeActivityFromSection, renameActivity, renameLabel, renameSection,
-  setDefaultTemplate, setLabelWeekdays, type Id, type Snapshot, type Template,
+  addLabel, addSection, addActivityToSection, deleteLabel, deleteSection, deleteTemplate,
+  draftFromTemplate, removeActivityFromSection, renameActivity, renameLabel, renameSection,
+  setDefaultTemplate, setLabelWeekdays, templatesUsingSection, type Id, type Template, type TemplateDraft,
 } from '@/domain'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -11,6 +11,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useSnapshot, useWatodo } from '@/ui/hooks'
 import { AddField, EditableText } from './fields'
+import { StarterPicker } from './StarterPicker'
 import { TemplateEditor } from './TemplateEditor'
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -21,32 +22,33 @@ const PART = 'flex flex-col gap-4'
 export function EditScreen() {
   return (
     <div className="flex flex-col gap-10">
-      <ActivitiesMenu />
+      <SlotsPart />
       <LabelsPart />
       <TemplatesPart />
     </div>
   )
 }
 
-/** Names of the templates with a slot pointing at this section. */
-function templateNamesUsing(snap: Snapshot, sectionId: Id): string[] {
-  const usingIds = new Set(
-    snap.items.filter(item => item.kind === 'slot' && item.sectionId === sectionId).map(item => item.templateId),
-  )
-  return snap.templates.filter(template => usingIds.has(template.id)).map(template => template.name)
-}
-
-function ActivitiesMenu() {
+function SlotsPart() {
   const { store } = useWatodo()
   const snap = useSnapshot()
   const activityNames = new Map(snap.activities.map(activity => [activity.id, activity.name]))
+  // The slot whose delete dialog is open.
+  const [deletingId, setDeletingId] = useState<Id | null>(null)
+  const deleting = snap.sections.find(section => section.id === deletingId)
+  const usedBy = deleting === undefined ? [] : templatesUsingSection(snap, deleting.id)
 
   return (
-    <section aria-labelledby="activities-menu-heading" className={PART}>
-      <h2 id="activities-menu-heading" className={HEADING}>Activities menu</h2>
+    <section aria-labelledby="slots-heading" className={PART}>
+      <div className="flex flex-col gap-1">
+        <h2 id="slots-heading" className={HEADING}>Slots</h2>
+        <p className="text-sm text-muted-foreground">
+          Each slot has one list of activities, shared by every template that uses it.
+        </p>
+      </div>
 
       {snap.sections.map(section => {
-        const usedBy = templateNamesUsing(snap, section.id)
+        const using = templatesUsingSection(snap, section.id)
         return (
           <Card key={section.id} role="region" aria-label={section.name}>
             <CardContent className="flex flex-col gap-4">
@@ -57,7 +59,7 @@ function ActivitiesMenu() {
                   onCommit={name => renameSection(store, section.id, name)}
                 />
                 <p className="text-sm text-muted-foreground">
-                  {usedBy.length > 0 ? `Used by: ${usedBy.join(', ')}` : 'Not used by any template'}
+                  {using.length > 0 ? `Used by: ${using.map(template => template.name).join(', ')}` : 'Not used by any template'}
                 </p>
               </div>
 
@@ -95,8 +97,8 @@ function ActivitiesMenu() {
               />
 
               <div className="flex justify-end">
-                <Button variant="ghost" size="sm" onClick={() => deleteSection(store, section.id)}>
-                  Delete section
+                <Button variant="ghost" size="sm" onClick={() => setDeletingId(section.id)}>
+                  Delete slot
                 </Button>
               </div>
             </CardContent>
@@ -105,11 +107,38 @@ function ActivitiesMenu() {
       })}
 
       <AddField
-        label="New section name"
-        placeholder="Section name"
-        button="Add section"
+        label="Slot name"
+        placeholder="Slot name"
+        button="Add slot"
         onAdd={name => addSection(store, name)}
       />
+
+      <Dialog open={deleting !== undefined} onOpenChange={open => { if (!open) setDeletingId(null) }}>
+        {deleting !== undefined && (
+          <DialogContent aria-describedby={undefined}>
+            <DialogHeader>
+              <DialogTitle>{`Delete "${deleting.name}"?`}</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              {usedBy.length > 0
+                ? `It will be removed from: ${usedBy.map(template => template.name).join(', ')}.`
+                : 'No template uses it.'}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setDeletingId(null)}>Cancel</Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  deleteSection(store, deleting.id)
+                  setDeletingId(null)
+                }}
+              >
+                Delete slot
+              </Button>
+            </div>
+          </DialogContent>
+        )}
+      </Dialog>
     </section>
   )
 }
@@ -183,21 +212,16 @@ function LabelsPart() {
 function TemplatesPart() {
   const { store } = useWatodo()
   const snap = useSnapshot()
-  const [editingId, setEditingId] = useState<Id | null>(null)
+  // Set while the starter picker is open for a new template.
+  const [picking, setPicking] = useState(false)
+  // The draft in the template editor. Nothing is stored until the editor saves.
+  const [editing, setEditing] = useState<TemplateDraft | null>(null)
   // The template being deleted while it is the default: the dialog asks who takes over.
   const [deletingId, setDeletingId] = useState<Id | null>(null)
   const deleting = snap.templates.find(template => template.id === deletingId)
 
-  const copy = (template: Template) => {
-    setEditingId(createTemplate(store, {
-      name: `${template.name} copy`, labelId: template.labelId, copyFrom: template.id,
-    }))
-  }
-
-  const newTemplate = () => {
-    const label = snap.labels[0]
-    if (label === undefined) return
-    setEditingId(createTemplate(store, { name: 'New template', labelId: label.id }))
+  const open = (draft: TemplateDraft | null) => {
+    if (draft !== null) setEditing(draft)
   }
 
   const remove = (template: Template) => {
@@ -226,8 +250,12 @@ function TemplatesPart() {
                       {isDefault && <Badge variant="secondary">default</Badge>}
                     </div>
                     <div className="flex flex-wrap gap-1">
-                      <Button variant="outline" size="sm" onClick={() => setEditingId(template.id)}>Edit</Button>
-                      <Button variant="outline" size="sm" onClick={() => copy(template)}>Copy</Button>
+                      <Button variant="outline" size="sm" onClick={() => open(draftFromTemplate(snap, template.id, 'edit'))}>
+                        Edit
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => open(draftFromTemplate(snap, template.id, 'copy'))}>
+                        Copy
+                      </Button>
                       {!isDefault && (
                         <Button variant="outline" size="sm" onClick={() => setDefaultTemplate(store, template.id)}>
                           Make default
@@ -244,10 +272,19 @@ function TemplatesPart() {
       })}
 
       <div>
-        <Button variant="outline" disabled={snap.labels.length === 0} onClick={newTemplate}>New template</Button>
+        <Button variant="outline" onClick={() => setPicking(true)}>New template</Button>
       </div>
 
-      <Dialog open={deleting !== undefined} onOpenChange={open => { if (!open) setDeletingId(null) }}>
+      <StarterPicker
+        open={picking}
+        onPick={draft => {
+          setPicking(false)
+          setEditing(draft)
+        }}
+        onClose={() => setPicking(false)}
+      />
+
+      <Dialog open={deleting !== undefined} onOpenChange={next => { if (!next) setDeletingId(null) }}>
         {deleting !== undefined && (
           <DialogContent aria-describedby={undefined}>
             <DialogHeader>
@@ -275,8 +312,12 @@ function TemplatesPart() {
         )}
       </Dialog>
 
-      {editingId !== null && (
-        <TemplateEditor key={editingId} templateId={editingId} onClose={() => setEditingId(null)} />
+      {editing !== null && (
+        <TemplateEditor
+          draft={editing}
+          onSaved={() => setEditing(null)}
+          onCancel={() => setEditing(null)}
+        />
       )}
     </section>
   )

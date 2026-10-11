@@ -45,17 +45,23 @@ const readTemplate: RowReader<Template> = (id, row) => {
   return { id, name, labelId, position };
 };
 
-const readItem: RowReader<TemplateItem> = (id, row) => {
+/** A slot is named by its section, so it needs the section names; a slot whose section is missing is skipped. */
+const readItem = (sectionNames: ReadonlyMap<Id, string>): RowReader<TemplateItem> => (id, row) => {
   const templateId = text(row, 'templateId');
   const kind = text(row, 'kind');
-  const name = text(row, 'name');
   // Rows saved before positions existed kept their order in `start`.
   const position = num(row, 'position') ?? num(row, 'start');
-  if (templateId === undefined || (kind !== 'fixed' && kind !== 'slot') || name === undefined
-    || position === undefined) {
+  if (templateId === undefined || (kind !== 'fixed' && kind !== 'slot') || position === undefined) {
     return undefined;
   }
   const sectionId = text(row, 'sectionId');
+  if (kind === 'slot') {
+    const name = sectionId === undefined ? undefined : sectionNames.get(sectionId);
+    if (sectionId === undefined || name === undefined) return undefined;
+    return { id, templateId, kind, name, position, sectionId };
+  }
+  const name = text(row, 'name');
+  if (name === undefined) return undefined;
   return { id, templateId, kind, name, position, ...(sectionId === undefined ? {} : { sectionId }) };
 };
 
@@ -117,11 +123,13 @@ function byPosition<T extends { position: number }>(a: T, b: T): number {
 /** Everything in the store as plain data. Rows missing a required cell are skipped. */
 export function readSnapshot(store: WatodoStore): Snapshot {
   const defaultTemplateId = store.getValue(VALUE.defaultTemplateId);
+  const sections = readRows(store, TABLE.sections, readSection).sort(byPosition);
+  const sectionNames = new Map<Id, string>(sections.map(section => [section.id, section.name]));
   return {
     labels: readRows(store, TABLE.labels, readLabel).sort(byPosition),
     templates: readRows(store, TABLE.templates, readTemplate).sort(byPosition),
-    items: readRows(store, TABLE.items, readItem).sort(byPosition),
-    sections: readRows(store, TABLE.sections, readSection).sort(byPosition),
+    items: readRows(store, TABLE.items, readItem(sectionNames)).sort(byPosition),
+    sections,
     activities: readRows(store, TABLE.activities, readActivity),
     listings: readRows(store, TABLE.listings, readListing).sort(byPosition),
     journal: readRows(store, TABLE.journal, readJournalEntry).sort((a, b) => a.loggedAt - b.loggedAt),

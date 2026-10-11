@@ -1,132 +1,229 @@
-import { useId } from 'react'
+import { useId, useState } from 'react'
+import { DragDropProvider, KeyboardSensor, PointerSensor, type DragEndEvent } from '@dnd-kit/react'
+import { isSortable, useSortable } from '@dnd-kit/react/sortable'
+import { GripVerticalIcon, XIcon } from 'lucide-react'
 import {
-  addItem, deleteItem, itemsOf, moveItem, renameTemplate, setTemplateLabel, updateItem, type Id, type TemplateItem,
+  moveStep, saveTemplate, type DraftStep, type Id, type Section, type TemplateDraft,
 } from '@/domain'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NativeSelect } from '@/ui/NativeSelect'
 import { useSnapshot, useWatodo } from '@/ui/hooks'
-import { EditableText } from './fields'
 
-export function TemplateEditor({ templateId, onClose }: { templateId: Id; onClose(): void }) {
+const NEW_LABEL = '__new-label__'
+const NEW_SLOT = '__new-slot__'
+
+/** A step being edited, with the local key its sortable row needs and whether its slot is being typed. */
+type Row = DraftStep & { key: string; typingNew: boolean }
+
+/**
+ * Edits a copy of the draft. Nothing is written until Save, which calls saveTemplate once.
+ * Cancel (or closing the dialog) discards the copy.
+ */
+export function TemplateEditor({ draft, onSaved, onCancel }: {
+  draft: TemplateDraft
+  onSaved(templateId: Id): void
+  onCancel(): void
+}) {
   const { store } = useWatodo()
   const snap = useSnapshot()
   const formId = useId()
-  const template = snap.templates.find(t => t.id === templateId)
-  if (template === undefined) return <></>
+  const [name, setName] = useState(draft.name)
+  const [label, setLabel] = useState(draft.label)
+  // A label the draft proposes as new stays pickable, even after another label was chosen.
+  const [proposedLabel] = useState(() => ('id' in draft.label ? null : draft.label))
+  const [rows, setRows] = useState<Row[]>(() =>
+    draft.steps.map(step => ({ ...step, key: crypto.randomUUID(), typingNew: false })))
 
-  const items = itemsOf(snap, templateId)
-  const firstSection = snap.sections[0]
+  const trimmedName = name.trim()
 
-  const addStep = () => {
-    addItem(store, templateId, { kind: 'fixed', name: 'New step' })
+  const onDragEnd = (event: DragEndEvent) => {
+    if (event.canceled) return
+    const source = event.operation.source
+    if (!source || !isSortable(source)) return
+    // moveStep only reorders the array it is given, so each row keeps its key and fields.
+    setRows(current => moveStep(current, source.initialIndex, source.index) as Row[])
   }
 
-  // Switching to a slot gives it the first section when it has none.
-  const changeKind = (item: TemplateItem, value: string) => {
-    if (value === 'slot' && item.sectionId === undefined && firstSection !== undefined) {
-      updateItem(store, item.id, { kind: 'slot', sectionId: firstSection.id })
-    } else {
-      updateItem(store, item.id, { kind: value === 'slot' ? 'slot' : 'fixed' })
-    }
+  const replaceRow = (key: string, next: Row) =>
+    setRows(current => current.map(row => (row.key === key ? next : row)))
+  const removeRow = (key: string) => setRows(current => current.filter(row => row.key !== key))
+
+  const addFixed = () =>
+    setRows(current => [...current, { kind: 'fixed', name: '', key: crypto.randomUUID(), typingNew: false }])
+  const addSlot = () => {
+    const first = snap.sections[0]
+    setRows(current => [...current, {
+      kind: 'slot',
+      slotName: first?.name ?? '',
+      key: crypto.randomUUID(),
+      typingNew: first === undefined,
+    }])
+  }
+
+  const chooseLabel = (value: string) => {
+    if (value === NEW_LABEL && proposedLabel !== null) setLabel(proposedLabel)
+    else setLabel({ id: value })
+  }
+
+  const save = () => {
+    const templateId = saveTemplate(store, {
+      templateId: draft.templateId,
+      name: trimmedName,
+      label,
+      steps: rows.map(toStep),
+    })
+    onSaved(templateId)
   }
 
   return (
-    <Dialog open onOpenChange={open => { if (!open) onClose() }}>
-      <DialogContent aria-describedby={undefined} className="max-h-[85svh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Edit template</DialogTitle>
-        </DialogHeader>
+    <Dialog open onOpenChange={next => { if (!next) onCancel() }}>
+      <DialogContent aria-describedby={undefined} className="flex max-h-[90svh] flex-col gap-0 overflow-hidden p-0">
+        <div className="flex shrink-0 flex-col gap-4 border-b p-4">
+          <DialogHeader>
+            <DialogTitle>{draft.templateId === undefined ? 'New template' : 'Edit template'}</DialogTitle>
+          </DialogHeader>
 
-        <div className="flex flex-col gap-2">
-          <Label htmlFor={`${formId}-name`}>Name</Label>
-          <EditableText
-            id={`${formId}-name`}
-            value={template.name}
-            onCommit={name => renameTemplate(store, templateId, name)}
-          />
-        </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor={`${formId}-name`}>Name</Label>
+            <Input id={`${formId}-name`} value={name} onChange={event => setName(event.target.value)} />
+          </div>
 
-        <div className="flex flex-col gap-2">
-          <Label htmlFor={`${formId}-label`}>Label</Label>
-          <NativeSelect
-            id={`${formId}-label`}
-            value={template.labelId}
-            onChange={event => setTemplateLabel(store, templateId, event.target.value)}
-          >
-            {snap.labels.map(label => (
-              <option key={label.id} value={label.id}>{label.name}</option>
-            ))}
-          </NativeSelect>
-        </div>
-
-        <div className="flex flex-col gap-3">
-          <h3 className="text-sm font-medium">Steps</h3>
-          <ul className="flex flex-col gap-3">
-            {items.map((item, index) => (
-              <li key={item.id} className="flex flex-col gap-2 rounded-xl p-3 ring-1 ring-foreground/10">
-                <div className="flex gap-2">
-                  <NativeSelect
-                    aria-label="Kind"
-                    className="w-32 shrink-0"
-                    value={item.kind}
-                    onChange={event => changeKind(item, event.target.value)}
-                  >
-                    <option value="fixed">Fixed step</option>
-                    <option value="slot">Slot</option>
-                  </NativeSelect>
-                  <EditableText
-                    aria-label="Step name"
-                    value={item.name}
-                    onCommit={name => updateItem(store, item.id, { name })}
-                  />
-                </div>
-
-                {item.kind === 'slot' && (
-                  <NativeSelect
-                    aria-label="Section"
-                    value={item.sectionId ?? ''}
-                    onChange={event => updateItem(store, item.id, { sectionId: event.target.value })}
-                  >
-                    {item.sectionId === undefined && <option value="" disabled>Choose a section</option>}
-                    {snap.sections.map(section => (
-                      <option key={section.id} value={section.id}>{section.name}</option>
-                    ))}
-                  </NativeSelect>
-                )}
-
-                <div className="flex flex-wrap justify-end gap-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={index === 0}
-                    onClick={() => moveItem(store, item.id, 'up')}
-                  >
-                    Move up
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={index === items.length - 1}
-                    onClick={() => moveItem(store, item.id, 'down')}
-                  >
-                    Move down
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => deleteItem(store, item.id)}>Delete step</Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-          <div>
-            <Button variant="outline" onClick={addStep}>Add step</Button>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor={`${formId}-label`}>Label</Label>
+            <NativeSelect
+              id={`${formId}-label`}
+              value={'id' in label ? label.id : NEW_LABEL}
+              onChange={event => chooseLabel(event.target.value)}
+            >
+              {snap.labels.map(item => (
+                <option key={item.id} value={item.id}>{item.name}</option>
+              ))}
+              {proposedLabel !== null && (
+                <option value={NEW_LABEL}>{`${proposedLabel.newName} (new)`}</option>
+              )}
+            </NativeSelect>
           </div>
         </div>
 
-        <DialogFooter>
-          <Button onClick={onClose}>Done</Button>
-        </DialogFooter>
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-1">
+          <h3 className="text-sm font-medium">Steps</h3>
+          <DragDropProvider sensors={[PointerSensor, KeyboardSensor]} onDragEnd={onDragEnd}>
+            <ul className="flex flex-col gap-2">
+              {rows.map((row, index) => (
+                <StepRow
+                  key={row.key}
+                  row={row}
+                  index={index}
+                  sections={snap.sections}
+                  onChange={next => replaceRow(row.key, next)}
+                  onRemove={() => removeRow(row.key)}
+                />
+              ))}
+            </ul>
+          </DragDropProvider>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={addFixed}>Add fixed step</Button>
+            <Button variant="outline" onClick={addSlot}>Add slot</Button>
+          </div>
+        </div>
+
+        <div className="flex shrink-0 justify-end gap-2 border-t p-4">
+          <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+          <Button disabled={trimmedName === ''} onClick={save}>Save</Button>
+        </div>
       </DialogContent>
     </Dialog>
   )
+}
+
+function StepRow({ row, index, sections, onChange, onRemove }: {
+  row: Row
+  index: number
+  sections: Section[]
+  onChange(next: Row): void
+  onRemove(): void
+}) {
+  const { ref, handleRef, isDragging } = useSortable({ id: row.key, index })
+  const shownName = stepName(row)
+
+  // One grid line: handle | kind badge | field | remove. The field column is the only flexible one.
+  // The typed slot name, when shown, sits on a second line under the select, in the field column.
+  return (
+    <li
+      ref={ref}
+      className={`grid grid-cols-[3rem_2.75rem_minmax(0,1fr)_3rem] items-center gap-2 rounded-xl ${isDragging ? 'bg-muted' : ''}`}
+    >
+      <Button
+        ref={handleRef}
+        variant="ghost"
+        size="icon"
+        className="size-12 touch-none cursor-grab"
+        aria-label={`Drag to reorder ${shownName}`}
+      >
+        <GripVerticalIcon />
+      </Button>
+      <Badge variant="outline" className="w-11 px-0 text-muted-foreground">{row.kind}</Badge>
+
+      {row.kind === 'fixed' ? (
+        <Input
+          aria-label="Step name"
+          value={row.name}
+          onChange={event => onChange({ ...row, name: event.target.value })}
+        />
+      ) : (
+        <>
+          <NativeSelect
+            aria-label="Slot"
+            value={row.typingNew ? NEW_SLOT : row.slotName}
+            onChange={event => {
+              const value = event.target.value
+              if (value === NEW_SLOT) onChange({ ...row, slotName: '', typingNew: true })
+              else onChange({ ...row, slotName: value, typingNew: false })
+            }}
+          >
+            {sections.map(section => (
+              <option key={section.id} value={section.name}>{section.name}</option>
+            ))}
+            {!row.typingNew && row.slotName !== '' && !sections.some(s => s.name === row.slotName) && (
+              <option value={row.slotName}>{`${row.slotName} (new)`}</option>
+            )}
+            <option value={NEW_SLOT}>New slot…</option>
+          </NativeSelect>
+          {row.typingNew && (
+            <Input
+              aria-label="New slot name"
+              className="col-start-3 row-start-2"
+              value={row.slotName}
+              onChange={event => onChange({ ...row, slotName: event.target.value })}
+            />
+          )}
+        </>
+      )}
+
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-12"
+        aria-label={`Remove ${shownName}`}
+        onClick={onRemove}
+      >
+        <XIcon />
+      </Button>
+    </li>
+  )
+}
+
+/** The name a row is shown and labelled by. A blank one reads as a placeholder. */
+function stepName(row: Row): string {
+  if (row.kind === 'fixed') return row.name.trim() || 'new step'
+  return row.slotName.trim() || 'new slot'
+}
+
+/** The row's step as the draft holds it: without its local key or typing flag. */
+function toStep({ key: _key, typingNew: _typingNew, ...step }: Row): DraftStep {
+  return step
 }
