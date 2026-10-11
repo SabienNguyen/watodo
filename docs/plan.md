@@ -450,3 +450,103 @@ Implement the rules and domain contracts of Change 4, with tests.
 
 ### Task 13: starter picker, draft editor with dragging, and the screens that use them
 Implement the UI of Change 4: `StarterPicker`, the draft `TemplateEditor` with drag-to-reorder, and the changes to EditScreen, DayPicker and Tutorial.
+
+---
+
+# Change 5: demo data
+
+A way to see the app as it looks after a month of use, without touching real data. Opening the app with `?demo` in the address shows a seeded, unsaved store.
+
+## Contracts
+```ts
+// src/domain/demo.ts (re-exported from src/domain/index.ts)
+export function seedDemoMonth(store: WatodoStore, clock: Clock): void;
+```
+Fills an empty store with three templates and about a month of plausible history ending today. Does nothing if the store already has templates. Deterministic: the same date gives the same data.
+
+### Task 14: demo data
+Implement `seedDemoMonth` with tests, and the `?demo` mode in `src/main.tsx`.
+
+---
+
+# Change 6: the Journal shows one day at a time
+
+The scrolling list of days is replaced by a single day with the date centred at the top and arrows to move a day back or forward. Kept deliberately lightweight.
+
+## Contracts
+```ts
+// src/domain/rules/views.ts (addition)
+export function journalDay(snap: Snapshot, day: DayKey): JournalDay; // that one day; entries [] and note '' and templateId null when nothing is recorded
+```
+`journalByDay` stays (other code and tests use it).
+
+### Task 15: one-day Journal
+Add `journalDay`, and rebuild `JournalScreen` around a single viewed day with previous/next arrows.
+
+---
+
+# Change 7: tabs on the Edit screen
+
+The Edit screen's three parts (Slots, Labels, Templates) become tabs across the top, one shown at a time, instead of one long scrolling page.
+
+### Task 16: Edit screen tabs
+Put the three parts of `EditScreen` behind tabs `Slots`, `Labels`, `Templates`.
+
+---
+
+# Change 8: Edit tabs are lists of names
+
+Each Edit tab shows a plain list of names. An item's form appears only when its name is tapped.
+
+### Task 17: name lists in the Edit tabs
+In each of the three Edit tabs, show a list of names; tapping a name expands that item's existing controls beneath it, one at a time.
+
+---
+
+# Change 9: tapping a name opens its own editing view
+
+Correction to Change 8: an item's controls do not unfold beneath its row. Tapping a name navigates to a dedicated editing view for that item, replacing the list, with a way back. The same pattern applies to slots, labels and templates.
+
+## Contracts
+```tsx
+// src/ui/edit/TemplateEditor.tsx
+export function TemplateEditorForm(props: { draft: TemplateDraft; onSaved(templateId: Id): void; onCancel(): void }): JSX.Element; // the editor's fields, steps and Cancel/Save, with no dialog around it
+export function TemplateEditor(props: { draft: TemplateDraft; onSaved(templateId: Id): void; onCancel(): void }): JSX.Element;     // unchanged for callers: TemplateEditorForm inside a Dialog
+```
+
+### Task 18: editing views in the Edit screen
+Replace the expand-beneath behaviour with a dedicated editing view per item.
+
+Change 5 addendum: demo mode is development-only (`import.meta.env.DEV`); a production build ignores `?demo` and does not include the demo code.
+
+---
+
+# Change 10: number repeated slots
+
+When a template contains the same slot more than once, each occurrence is labelled `#1`, `#2`, … in template order so it is clear which one is meant.
+
+## Contracts
+```ts
+// src/domain/rules/currentSlot.ts (addition)
+export function slotDisplayNames(items: TemplateItem[]): Map<Id, string>;
+// For every item in `items` (one template's items): its name. Slots whose sectionId occurs more than once among the slots get ' #1', ' #2', … appended in position order. Fixed steps and slots that occur once keep their plain name.
+
+// src/domain/rules/views.ts (changes)
+export interface NowView {
+  day: DayKey;
+  guess: TemplateGuess; template: Template | null;
+  slots: { item: TemplateItem; displayName: string }[];
+  position: Position | null;
+  positionName: string | null;           // display name of position.item
+  activities: { activity: Activity; lastDone: JournalEntry | null }[];
+}
+export interface FullDayView {
+  template: Template | null;
+  items: { item: TemplateItem; displayName: string; current: boolean; activities: Activity[] }[];
+}
+export function entrySlotName(snap: Snapshot, entry: JournalEntry): string;
+// The display name of the slot the entry was logged in: when entry.itemId names an existing item, that item's display name within its own template; otherwise the entry's section name; '(removed)' when neither exists.
+```
+
+### Task 19: number repeated slots
+Implement the contracts above and show the numbered names on the Now screen, in the full day list and on journal entries.

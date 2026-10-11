@@ -57,13 +57,13 @@ test('cancelling the starter picker writes nothing and stays on the welcome step
   expect(setupState(store)).toBe('new')
 })
 
-test('a store set up before this change shows Make it yours with the Slots part and Done, open watodo', () => {
+test('a store set up before this change shows Make it yours with the Edit tabs and Done, open watodo', () => {
   const store = createWatodoStore()
   setUpStarter(store)
   renderWithWatodo(<Tutorial />, { store })
 
   expect(screen.getByRole('heading', { name: 'Make it yours' })).toBeInTheDocument()
-  expect(screen.getByRole('heading', { name: 'Slots' })).toBeInTheDocument()
+  expect(screen.getByRole('tab', { name: 'Slots' })).toHaveAttribute('aria-selected', 'true')
 
   fireEvent.click(screen.getByRole('button', { name: 'Done, open watodo' }))
 

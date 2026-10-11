@@ -5,3 +5,4 @@ export * from './logging';
 export * from './menu';
 export * from './templates';
 export * from './rules';
+export * from './demo';

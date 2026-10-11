@@ -1,9 +1,9 @@
 import { useState } from 'react'
+import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
 import {
-  addPastEntry, dayKeyOf, deleteEntry, editEntry, fullDayView, journalByDay, nowView, sectionActivities, setDayNote,
-  type DayKey, type Id, type JournalDay, type JournalEntry, type Snapshot,
+  addDays, addPastEntry, dayKeyOf, deleteEntry, editEntry, entrySlotName, fullDayView, journalDay, sectionActivities,
+  setDayNote, type DayKey, type Id, type JournalEntry,
 } from '@/domain'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -14,97 +14,87 @@ import { dayLabel } from '@/ui/format'
 import { useNowDate, useSnapshot, useWatodo } from '@/ui/hooks'
 import { FullDay } from './FullDay'
 
-/** Today first, even with nothing logged or noted; the other days follow newest first. */
-function journalDays(snap: Snapshot, today: DayKey, todayTemplateId: Id | null): JournalDay[] {
-  const listed = journalByDay(snap)
-  const todayListed = listed.find(day => day.day === today)
-  const todayDay: JournalDay = {
-    day: today,
-    templateId: todayTemplateId,
-    note: todayListed?.note ?? '',
-    entries: todayListed?.entries ?? [],
-  }
-  return [todayDay, ...listed.filter(day => day.day !== today)]
-}
-
+/** One day at a time, starting today. The day can be moved back freely but not forward past today. */
 export function JournalScreen() {
   const snap = useSnapshot()
   const now = useNowDate()
   const today = dayKeyOf(now)
-  const todayGuess = nowView(snap, now).guess
-  const days = journalDays(snap, today, todayGuess.confirmed ? todayGuess.templateId : null)
-  const hasFullDay = fullDayView(snap, now).template !== null
+  const [viewed, setViewed] = useState<DayKey>(today)
   const [editingId, setEditingId] = useState<Id | null>(null)
   const [adding, setAdding] = useState(false)
   const editing = snap.journal.find(entry => entry.id === editingId)
 
+  const isToday = viewed === today
+  const day = journalDay(snap, viewed)
+  const templateName = day.templateId === null
+    ? 'No template recorded'
+    : (snap.templates.find(template => template.id === day.templateId)?.name ?? '(removed)')
+  const hasFullDay = isToday && fullDayView(snap, now).template !== null
+
   return (
     <div className="flex flex-col gap-8">
-      <div className="flex justify-end">
-        <Button variant="outline" onClick={() => setAdding(true)}>Add entry</Button>
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-11"
+            aria-label="Previous day"
+            onClick={() => setViewed(addDays(viewed, -1))}
+          >
+            <ChevronLeftIcon />
+          </Button>
+          <h2 className="flex-1 text-center text-lg font-semibold">{dayLabel(viewed)}</h2>
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-11"
+            aria-label="Next day"
+            disabled={viewed >= today}
+            onClick={() => setViewed(addDays(viewed, 1))}
+          >
+            <ChevronRightIcon />
+          </Button>
+        </div>
+        {isToday
+          ? <p className="text-center text-sm text-muted-foreground">Today</p>
+          : (
+            <div className="flex justify-center">
+              <Button variant="link" size="sm" onClick={() => setViewed(today)}>Back to today</Button>
+            </div>
+          )}
       </div>
 
-      {days.map(day => (
-        <DaySection
-          key={day.day}
-          day={day}
-          isToday={day.day === today}
-          hasFullDay={hasFullDay}
-          nothingLogged={snap.journal.length === 0}
-          onEdit={setEditingId}
-        />
-      ))}
+      <div className="flex flex-col gap-4">
+        <p className="text-sm text-muted-foreground">{templateName}</p>
+
+        {hasFullDay && <FullDayToggle />}
+
+        {day.entries.length === 0
+          ? <p className="text-muted-foreground">Nothing logged.</p>
+          : (
+            <ul className="flex flex-col divide-y">
+              {day.entries.map(entry => (
+                <EntryRow key={entry.id} entry={entry} onEdit={() => setEditingId(entry.id)} />
+              ))}
+            </ul>
+          )}
+
+        <div className="flex justify-end">
+          <Button variant="outline" onClick={() => setAdding(true)}>Add entry</Button>
+        </div>
+
+        <DayNote key={viewed} day={viewed} note={day.note} />
+      </div>
 
       {editing !== undefined && (
         <EditEntryDialog key={editing.id} entry={editing} onClose={() => setEditingId(null)} />
       )}
 
       {adding && (
-        <AddEntryDialog today={today} onClose={() => setAdding(false)} />
+        <AddEntryDialog today={today} initialDay={viewed} onClose={() => setAdding(false)} />
       )}
     </div>
-  )
-}
-
-function DaySection({ day, isToday, hasFullDay, nothingLogged, onEdit }: {
-  day: JournalDay
-  isToday: boolean
-  hasFullDay: boolean
-  nothingLogged: boolean
-  onEdit(entryId: Id): void
-}) {
-  const snap = useSnapshot()
-  const headingId = `day-${day.day}`
-  const templateName = day.templateId === null
-    ? 'No template recorded'
-    : (snap.templates.find(template => template.id === day.templateId)?.name ?? '(removed)')
-
-  return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-2">
-          <h2 id={headingId} className="text-lg font-semibold">{dayLabel(day.day)}</h2>
-          {isToday && <Badge variant="secondary">Today</Badge>}
-        </div>
-        <p className="text-sm text-muted-foreground">{templateName}</p>
-      </div>
-
-      {isToday && hasFullDay && <FullDayToggle />}
-
-      {day.entries.length === 0 && isToday && nothingLogged && (
-        <p className="text-muted-foreground">Nothing logged yet.</p>
-      )}
-
-      {day.entries.length > 0 && (
-        <ul className="flex flex-col divide-y">
-          {day.entries.map(entry => (
-            <EntryRow key={entry.id} entry={entry} onEdit={() => onEdit(entry.id)} />
-          ))}
-        </ul>
-      )}
-
-      <DayNote day={day.day} note={day.note} />
-    </section>
   )
 }
 
@@ -131,14 +121,14 @@ function EntryRow({ entry, onEdit }: { entry: JournalEntry; onEdit(): void }) {
   const { store } = useWatodo()
   const snap = useSnapshot()
   const activityName = snap.activities.find(activity => activity.id === entry.activityId)?.name ?? '(removed)'
-  const sectionName = snap.sections.find(section => section.id === entry.sectionId)?.name ?? '(removed)'
+  const slotName = entrySlotName(snap, entry)
 
   return (
     <li className="flex flex-col gap-1 py-3">
       <div className="flex items-center justify-between gap-2">
         <p className="flex flex-wrap items-baseline gap-x-2 font-medium">
           <span>{activityName}</span>
-          <span className="text-sm font-normal text-muted-foreground">{sectionName}</span>
+          <span className="text-sm font-normal text-muted-foreground">{slotName}</span>
         </p>
         <div className="flex shrink-0 gap-1">
           <Button variant="ghost" size="sm" onClick={onEdit}>Edit</Button>
@@ -198,13 +188,14 @@ function EditEntryDialog({ entry, onClose }: { entry: JournalEntry; onClose(): v
   )
 }
 
-function AddEntryDialog({ today, onClose }: {
+function AddEntryDialog({ today, initialDay, onClose }: {
   today: DayKey
+  initialDay: DayKey
   onClose(): void
 }) {
   const { store } = useWatodo()
   const snap = useSnapshot()
-  const [day, setDay] = useState(today)
+  const [day, setDay] = useState(initialDay)
   const [sectionId, setSectionId] = useState<Id | ''>('')
   const [activityId, setActivityId] = useState<Id | ''>('')
   const [note, setNote] = useState('')
@@ -298,7 +289,7 @@ function AddEntryDialog({ today, onClose }: {
   )
 }
 
-/** Saves on blur. Clearing the text removes the note. */
+/** Saves on blur. Clearing the text removes the note. Keyed by day, so each day has its own draft. */
 function DayNote({ day, note }: { day: DayKey; note: string }) {
   const { store } = useWatodo()
   const [draft, setDraft] = useState(note)

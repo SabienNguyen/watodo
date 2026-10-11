@@ -4,8 +4,8 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import { toast } from 'sonner'
 import { Toaster } from '@/components/ui/sonner'
 import {
-  createWatodoStore, draftFromTemplate, finishSetup, readSnapshot, saveTemplate, setUpStarter,
-  type Clock, type WatodoStore,
+  confirmDay, createWatodoStore, draftFromStarter, draftFromTemplate, finishSetup, readSnapshot, saveTemplate,
+  setUpStarter, type Clock, type WatodoStore,
 } from '@/domain'
 import { renderWithWatodo } from '@/ui/testing'
 import { NowScreen } from './NowScreen'
@@ -35,6 +35,18 @@ function slotButton(name: string): HTMLElement {
 
 function confirmBasicDay() {
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Basic day' }))
+}
+
+/** The starter store with the Weekend starter saved (its Free time slot repeats) and confirmed today. */
+function weekendConfirmedStore(): WatodoStore {
+  const store = finishedStore()
+  const draft = draftFromStarter(readSnapshot(store), 'weekend')
+  if (draft === null) throw new Error('no weekend starter')
+  saveTemplate(store, draft)
+  const weekend = readSnapshot(store).templates.find(template => template.name === 'Weekend')
+  if (weekend === undefined) throw new Error('no weekend template')
+  confirmDay(store, MONDAY_1745, weekend.id)
+  return store
 }
 
 describe('NowScreen', () => {
@@ -177,6 +189,30 @@ describe('NowScreen', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(screen.getByText('confirmed')).toBeInTheDocument()
     expect(readSnapshot(store).journal).toHaveLength(0)
+  })
+
+  test('a repeated slot is numbered: one row button is pressed, and pressing Free time #2 moves the heading and logs to it', () => {
+    const store = weekendConfirmedStore()
+    renderNow({ store, clock: MONDAY_1745 })
+
+    expect(slotButton('Free time #1')).toHaveAttribute('aria-pressed', 'true')
+    expect(slotButton('Free time #2')).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getAllByRole('button', { pressed: true })).toHaveLength(1)
+    expect(slotButton('Post dinner')).toBeInTheDocument()
+    expect(slotButton('Bedtime')).toBeInTheDocument()
+
+    fireEvent.click(slotButton('Free time #2'))
+
+    expect(screen.getByRole('heading', { name: 'Free time #2' })).toBeInTheDocument()
+    expect(slotButton('Free time #2')).toHaveAttribute('aria-pressed', 'true')
+    expect(slotButton('Free time #1')).toHaveAttribute('aria-pressed', 'false')
+
+    fireEvent.click(activityButton('Hike'))
+
+    const snap = readSnapshot(store)
+    const [, secondFreeTime] = snap.items.filter(item => item.name === 'Free time')
+    expect(snap.journal).toHaveLength(1)
+    expect(snap.journal[0].itemId).toBe(secondFreeTime.id)
   })
 
   test('has no full day toggle and no full day list', () => {

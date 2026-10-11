@@ -1,11 +1,38 @@
 // @vitest-environment jsdom
 import { screen, within } from '@testing-library/react'
 import { describe, expect, test } from 'vitest'
-import { createWatodoStore } from '@/domain'
+import {
+  confirmDay, createWatodoStore, draftFromStarter, finishSetup, readSnapshot, saveTemplate, setUpStarter,
+  type WatodoStore,
+} from '@/domain'
 import { renderWithWatodo } from '@/ui/testing'
 import { FullDay } from './FullDay'
 
+/** The starter store with the Weekend starter saved (its Free time slot repeats) and confirmed for Mon 12 Oct. */
+function weekendStore(): WatodoStore {
+  const store = createWatodoStore()
+  setUpStarter(store)
+  finishSetup(store)
+  const draft = draftFromStarter(readSnapshot(store), 'weekend')
+  if (draft === null) throw new Error('no weekend starter')
+  saveTemplate(store, draft)
+  const weekend = readSnapshot(store).templates.find(template => template.name === 'Weekend')
+  if (weekend === undefined) throw new Error('no weekend template')
+  confirmDay(store, () => new Date(2026, 9, 12, 9, 0), weekend.id)
+  return store
+}
+
 describe('FullDay', () => {
+  test('numbers the repeated Free time: row 2 is Free time #1 and row 4 is Free time #2', () => {
+    renderWithWatodo(<FullDay />, { store: weekendStore() })
+
+    const rows = screen.getAllByRole('listitem')
+    expect(rows).toHaveLength(7)
+    expect(rows[1]).toHaveTextContent('Free time #1')
+    expect(rows[3]).toHaveTextContent('Free time #2')
+    expect(screen.queryByText('Free time')).toBeNull()
+  })
+
   test('lists the basic day items in order, with no heading and no numbers', () => {
     renderWithWatodo(<FullDay />)
 

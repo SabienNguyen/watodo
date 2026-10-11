@@ -6,7 +6,7 @@ import {
   setUpStarter, type Id, type TemplateDraft, type WatodoStore,
 } from '@/domain'
 import { renderWithWatodo } from '@/ui/testing'
-import { TemplateEditor } from './TemplateEditor'
+import { TemplateEditor, TemplateEditorForm } from './TemplateEditor'
 
 function finishedStore(): WatodoStore {
   const store = createWatodoStore()
@@ -254,5 +254,23 @@ describe('TemplateEditor', () => {
     expect(snap.templates.map(template => template.name)).toEqual(['Basic day', 'Basic day copy'])
     expect(onSaved.mock.calls[0][0]).not.toBe(original)
     expect(itemsOf(store, original)).toHaveLength(6)
+  })
+})
+
+describe('TemplateEditorForm', () => {
+  test('is the editor with no dialog around it, and its Save calls onSaved with the new template', () => {
+    const store = finishedStore()
+    const onSaved = vi.fn()
+    const onCancel = vi.fn()
+    renderWithWatodo(<TemplateEditorForm draft={starter('office', store)} onSaved={onSaved} onCancel={onCancel} />, { store })
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(nameField()).toHaveValue('Office day')
+
+    fireEvent.click(saveButton())
+
+    const created = readSnapshot(store).templates.find(template => template.name === 'Office day')
+    expect(onSaved).toHaveBeenCalledWith(created?.id)
+    expect(onCancel).not.toHaveBeenCalled()
   })
 })

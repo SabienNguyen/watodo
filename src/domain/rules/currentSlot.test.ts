@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { STAY_MS, itemsOf, positionAt, slotsOf } from './currentSlot'
+import { STAY_MS, itemsOf, positionAt, slotDisplayNames, slotsOf } from './currentSlot'
 import type { DayRecord, JournalEntry, Snapshot, TemplateItem } from './types'
 
 const NOW = new Date(2026, 9, 12, 18, 0)
@@ -163,5 +163,54 @@ describe('positionAt', () => {
 
   test('a template with no slots has no position', () => {
     expect(positionAt([morning, work, dinner], [], undefined, NOW)).toBeNull()
+  })
+})
+
+describe('slotDisplayNames', () => {
+  test('numbers each repeated slot in position order, and leaves fixed steps and single slots plain', () => {
+    const items: TemplateItem[] = [
+      fixed('morning', 0, 'Morning'),
+      slot('a1', 1, 'A', 'a'),
+      fixed('lunch', 2, 'Lunch'),
+      slot('b1', 3, 'B', 'b'),
+      slot('a2', 4, 'A', 'a'),
+      fixed('dinner', 5, 'Dinner'),
+      slot('a3', 6, 'A', 'a'),
+    ]
+    expect(Object.fromEntries(slotDisplayNames(items))).toEqual({
+      morning: 'Morning',
+      a1: 'A #1',
+      lunch: 'Lunch',
+      b1: 'B',
+      a2: 'A #2',
+      dinner: 'Dinner',
+      a3: 'A #3',
+    })
+  })
+
+  test('a list with no repeats keeps every plain name', () => {
+    expect(Object.fromEntries(slotDisplayNames(basic))).toEqual({
+      morning: 'Morning',
+      work: 'Work',
+      postWork: 'Post work',
+      dinner: 'Dinner',
+      postDinner: 'Post dinner',
+      bedtime: 'Bedtime',
+    })
+  })
+
+  test('numbering follows position even when the input array is shuffled', () => {
+    const shuffled: TemplateItem[] = [
+      slot('a3', 6, 'A', 'a'),
+      fixed('lunch', 2, 'Lunch'),
+      slot('a1', 1, 'A', 'a'),
+      slot('a2', 4, 'A', 'a'),
+    ]
+    expect(Object.fromEntries(slotDisplayNames(shuffled))).toEqual({
+      a1: 'A #1',
+      lunch: 'Lunch',
+      a2: 'A #2',
+      a3: 'A #3',
+    })
   })
 })

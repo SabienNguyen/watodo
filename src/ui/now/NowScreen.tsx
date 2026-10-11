@@ -57,7 +57,7 @@ export function NowScreen() {
     showAfterLog(entryId, activityName)
   }
 
-  const { position, slots, template } = view
+  const { position, positionName, slots, template } = view
 
   return (
     <div className="flex flex-col gap-6">
@@ -76,17 +76,17 @@ export function NowScreen() {
 
       {slots.length > 0 && (
         <div className="flex gap-2 overflow-x-auto pb-1">
-          {slots.map(slot => {
-            const current = slot.id === position?.item.id
+          {slots.map(({ item, displayName }) => {
+            const current = item.id === position?.item.id
             return (
               <Button
-                key={slot.id}
+                key={item.id}
                 variant={current ? 'default' : 'outline'}
                 className="shrink-0"
                 aria-pressed={current}
-                onClick={() => goToSlot(store, clock, slot.id)}
+                onClick={() => goToSlot(store, clock, item.id)}
               >
-                {slot.name}
+                {displayName}
               </Button>
             )
           })}
@@ -100,7 +100,7 @@ export function NowScreen() {
 
       {position !== null && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-xl font-semibold">{position.item.name}</h2>
+          <h2 className="text-xl font-semibold">{positionName}</h2>
 
           {view.activities.length === 0 && (
             <p className="text-muted-foreground">No activities in this section yet.</p>

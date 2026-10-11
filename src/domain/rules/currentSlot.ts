@@ -17,6 +17,32 @@ export function slotsOf(items: TemplateItem[]): TemplateItem[] {
   return items.filter(item => item.kind === 'slot').sort(byPosition)
 }
 
+/**
+ * The name each item of one template is shown by. A slot whose section is used by more than one slot
+ * of the template gets ' #1', ' #2', … in position order. Fixed steps and single slots keep their name.
+ */
+export function slotDisplayNames(items: TemplateItem[]): Map<Id, string> {
+  const ordered = [...items].sort(byPosition)
+  const uses = new Map<Id, number>()
+  for (const slot of slotsOf(ordered)) {
+    if (slot.sectionId !== undefined) uses.set(slot.sectionId, (uses.get(slot.sectionId) ?? 0) + 1)
+  }
+
+  const numbered = new Map<Id, number>()
+  const names = new Map<Id, string>()
+  for (const item of ordered) {
+    const sectionId = item.kind === 'slot' ? item.sectionId : undefined
+    if (sectionId === undefined || (uses.get(sectionId) ?? 0) < 2) {
+      names.set(item.id, item.name)
+      continue
+    }
+    const n = (numbered.get(sectionId) ?? 0) + 1
+    numbered.set(sectionId, n)
+    names.set(item.id, `${item.name} #${n}`)
+  }
+  return names
+}
+
 /** The slot an entry was logged in: the one named by its itemId, else the first slot of its section. */
 function slotOf(slots: TemplateItem[], entry: JournalEntry): TemplateItem | undefined {
   return slots.find(slot => slot.id === entry.itemId)

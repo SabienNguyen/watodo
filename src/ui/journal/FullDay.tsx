@@ -14,7 +14,7 @@ export function FullDay() {
   return (
     <div className="flex flex-col gap-6">
       <ol className="flex list-none flex-col gap-3">
-        {view.items.map(({ item, current, activities }) => (
+        {view.items.map(({ item, displayName, current, activities }) => (
           <li
             key={item.id}
             aria-current={current ? 'true' : undefined}
@@ -24,7 +24,7 @@ export function FullDay() {
             )}
           >
             <div className="flex items-center justify-between gap-2">
-              <p className="font-medium">{item.name}</p>
+              <p className="font-medium">{displayName}</p>
               <Badge variant={item.kind === 'slot' ? 'default' : 'secondary'}>{item.kind}</Badge>
             </div>
             {item.kind === 'slot' && (

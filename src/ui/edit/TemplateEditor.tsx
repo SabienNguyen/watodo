@@ -20,10 +20,36 @@ const NEW_SLOT = '__new-slot__'
 type Row = DraftStep & { key: string; typingNew: boolean }
 
 /**
- * Edits a copy of the draft. Nothing is written until Save, which calls saveTemplate once.
+ * The template editor in a dialog: a fixed title and footer, with the steps scrolling between them.
  * Cancel (or closing the dialog) discards the copy.
  */
 export function TemplateEditor({ draft, onSaved, onCancel }: {
+  draft: TemplateDraft
+  onSaved(templateId: Id): void
+  onCancel(): void
+}) {
+  return (
+    <Dialog open onOpenChange={next => { if (!next) onCancel() }}>
+      {/* The steps region scrolls only inside the dialog, where the dialog's height is capped. */}
+      <DialogContent
+        aria-describedby={undefined}
+        className="flex max-h-[90svh] flex-col gap-0 overflow-hidden p-0 [&_[data-slot=template-steps]]:overflow-y-auto"
+      >
+        <DialogHeader className="shrink-0 p-4 pb-0">
+          <DialogTitle>{draft.templateId === undefined ? 'New template' : 'Edit template'}</DialogTitle>
+        </DialogHeader>
+        <TemplateEditorForm draft={draft} onSaved={onSaved} onCancel={onCancel} />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/**
+ * The editor's fields, steps and Cancel / Save, with no dialog or title around it. It flows in the
+ * page; inside the dialog it fills the dialog's height, with the fields and footer kept in view.
+ * Edits a copy of the draft. Nothing is written until Save, which calls saveTemplate once.
+ */
+export function TemplateEditorForm({ draft, onSaved, onCancel }: {
   draft: TemplateDraft
   onSaved(templateId: Id): void
   onCancel(): void
@@ -80,63 +106,57 @@ export function TemplateEditor({ draft, onSaved, onCancel }: {
   }
 
   return (
-    <Dialog open onOpenChange={next => { if (!next) onCancel() }}>
-      <DialogContent aria-describedby={undefined} className="flex max-h-[90svh] flex-col gap-0 overflow-hidden p-0">
-        <div className="flex shrink-0 flex-col gap-4 border-b p-4">
-          <DialogHeader>
-            <DialogTitle>{draft.templateId === undefined ? 'New template' : 'Edit template'}</DialogTitle>
-          </DialogHeader>
-
-          <div className="flex flex-col gap-2">
-            <Label htmlFor={`${formId}-name`}>Name</Label>
-            <Input id={`${formId}-name`} value={name} onChange={event => setName(event.target.value)} />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Label htmlFor={`${formId}-label`}>Label</Label>
-            <NativeSelect
-              id={`${formId}-label`}
-              value={'id' in label ? label.id : NEW_LABEL}
-              onChange={event => chooseLabel(event.target.value)}
-            >
-              {snap.labels.map(item => (
-                <option key={item.id} value={item.id}>{item.name}</option>
-              ))}
-              {proposedLabel !== null && (
-                <option value={NEW_LABEL}>{`${proposedLabel.newName} (new)`}</option>
-              )}
-            </NativeSelect>
-          </div>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex shrink-0 flex-col gap-4 border-b p-4">
+        <div className="flex flex-col gap-2">
+          <Label htmlFor={`${formId}-name`}>Name</Label>
+          <Input id={`${formId}-name`} value={name} onChange={event => setName(event.target.value)} />
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-1">
-          <h3 className="text-sm font-medium">Steps</h3>
-          <DragDropProvider sensors={[PointerSensor, KeyboardSensor]} onDragEnd={onDragEnd}>
-            <ul className="flex flex-col gap-2">
-              {rows.map((row, index) => (
-                <StepRow
-                  key={row.key}
-                  row={row}
-                  index={index}
-                  sections={snap.sections}
-                  onChange={next => replaceRow(row.key, next)}
-                  onRemove={() => removeRow(row.key)}
-                />
-              ))}
-            </ul>
-          </DragDropProvider>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={addFixed}>Add fixed step</Button>
-            <Button variant="outline" onClick={addSlot}>Add slot</Button>
-          </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor={`${formId}-label`}>Label</Label>
+          <NativeSelect
+            id={`${formId}-label`}
+            value={'id' in label ? label.id : NEW_LABEL}
+            onChange={event => chooseLabel(event.target.value)}
+          >
+            {snap.labels.map(item => (
+              <option key={item.id} value={item.id}>{item.name}</option>
+            ))}
+            {proposedLabel !== null && (
+              <option value={NEW_LABEL}>{`${proposedLabel.newName} (new)`}</option>
+            )}
+          </NativeSelect>
         </div>
+      </div>
 
-        <div className="flex shrink-0 justify-end gap-2 border-t p-4">
-          <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-          <Button disabled={trimmedName === ''} onClick={save}>Save</Button>
+      <div data-slot="template-steps" className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-1">
+        <h3 className="text-sm font-medium">Steps</h3>
+        <DragDropProvider sensors={[PointerSensor, KeyboardSensor]} onDragEnd={onDragEnd}>
+          <ul className="flex flex-col gap-2">
+            {rows.map((row, index) => (
+              <StepRow
+                key={row.key}
+                row={row}
+                index={index}
+                sections={snap.sections}
+                onChange={next => replaceRow(row.key, next)}
+                onRemove={() => removeRow(row.key)}
+              />
+            ))}
+          </ul>
+        </DragDropProvider>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={addFixed}>Add fixed step</Button>
+          <Button variant="outline" onClick={addSlot}>Add slot</Button>
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+
+      <div className="flex shrink-0 justify-end gap-2 border-t p-4">
+        <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+        <Button disabled={trimmedName === ''} onClick={save}>Save</Button>
+      </div>
+    </div>
   )
 }
 

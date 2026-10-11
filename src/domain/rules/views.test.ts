@@ -1,10 +1,16 @@
 import { describe, expect, test } from 'vitest'
 import {
-  dotStrip, fullDayView, journalByDay, nowView, progress, sectionActivities, templatesUsingSection,
+  dotStrip, entrySlotName, fullDayView, journalByDay, journalDay, nowView, progress, sectionActivities,
+  templatesUsingSection,
 } from './views'
 import type {
-  Activity, DayRecord, JournalEntry, Listing, Section, Snapshot, Template, TemplateItem,
+  Activity, DayRecord, JournalEntry, Listing, Section, Snapshot, Template, TemplateDraft, TemplateItem,
 } from './types'
+import { draftFromStarter } from './starters'
+import { confirmDay, goToSlot } from '../logging'
+import { finishSetup, setUpStarter } from '../setup'
+import { createWatodoStore, readSnapshot, type WatodoStore } from '../store'
+import { saveTemplate } from '../templates'
 
 const at = (year: number, month: number, day: number, hours: number, minutes: number) =>
   new Date(year, month, day, hours, minutes)
@@ -78,6 +84,34 @@ function entry(id: string, activityId: string, sectionId: string, loggedAt: Date
   return { id, activityId, sectionId, loggedAt: loggedAt.getTime(), itemId }
 }
 
+function weekendDraft(snap: Snapshot): TemplateDraft {
+  const draft = draftFromStarter(snap, 'weekend')
+  if (draft === null) throw new Error('no weekend starter')
+  return draft
+}
+
+/** The starter store with the Weekend starter saved and confirmed for Mon 12 Oct. Its Free time slot repeats. */
+function weekendStore(): WatodoStore {
+  const store = createWatodoStore()
+  setUpStarter(store)
+  finishSetup(store)
+  saveTemplate(store, weekendDraft(readSnapshot(store)))
+  const weekend = readSnapshot(store).templates.find(template => template.name === 'Weekend')
+  if (weekend === undefined) throw new Error('no weekend template')
+  confirmDay(store, () => at(2026, OCT, 12, 9, 0), weekend.id)
+  return store
+}
+
+function freeTimes(snap: Snapshot): TemplateItem[] {
+  return snap.items.filter(item => item.name === 'Free time')
+}
+
+function sectionIdNamed(snap: Snapshot, name: string): string {
+  const section = snap.sections.find(candidate => candidate.name === name)
+  if (section === undefined) throw new Error(`no section ${name}`)
+  return section.id
+}
+
 describe('nowView', () => {
   test('lists the day slots, and with nothing logged today the first slot with its section activities', () => {
     const journal = [
@@ -89,7 +123,9 @@ describe('nowView', () => {
 
     expect(view.day).toBe('2026-10-12')
     expect(view.template?.id).toBe('basic')
-    expect(view.slots.map(s => s.id)).toEqual(['postWork', 'postDinner', 'bedtime'])
+    expect(view.slots.map(s => s.item.id)).toEqual(['postWork', 'postDinner', 'bedtime'])
+    expect(view.slots.map(s => s.displayName)).toEqual(['Post work', 'Post dinner', 'Bedtime'])
+    expect(view.positionName).toBe('Post work')
     expect(view.position).toEqual({ item: postWork, reason: 'first' })
     expect(view.activities.map(a => [a.activity.name, a.lastDone?.id ?? null])).toEqual([
       ['Gym', 'gymLast'],
@@ -143,6 +179,7 @@ describe('nowView', () => {
     expect(view.template?.id).toBe('basic')
     expect(view.slots).toEqual([])
     expect(view.position).toBeNull()
+    expect(view.positionName).toBeNull()
     expect(view.activities).toEqual([])
   })
 
@@ -151,7 +188,27 @@ describe('nowView', () => {
     expect(view.template).toBeNull()
     expect(view.slots).toEqual([])
     expect(view.position).toBeNull()
+    expect(view.positionName).toBeNull()
     expect(view.activities).toEqual([])
+  })
+
+  test('on a Weekend template the repeated Free time slots are numbered, and positionName follows the position', () => {
+    const store = weekendStore()
+    const snap = readSnapshot(store)
+    const [first, second] = freeTimes(snap)
+
+    const fresh = nowView(snap, at(2026, OCT, 12, 18, 0))
+    expect(fresh.slots.map(s => s.displayName)).toEqual(['Free time #1', 'Free time #2', 'Post dinner', 'Bedtime'])
+    expect(fresh.position?.item.id).toBe(first.id)
+    expect(fresh.positionName).toBe('Free time #1')
+
+    goToSlot(store, () => at(2026, OCT, 12, 18, 0), second.id)
+    const moved = nowView(readSnapshot(store), at(2026, OCT, 12, 18, 5))
+    expect(moved.positionName).toBe('Free time #2')
+  })
+
+  test('on the basic day the position name is the plain slot name', () => {
+    expect(nowView(fixture(), at(2026, OCT, 12, 18, 0)).positionName).toBe('Post work')
   })
 })
 
@@ -189,6 +246,55 @@ describe('fullDayView', () => {
     const view = fullDayView(fixture({ labels: [], templates: [], defaultTemplateId: null }), at(2026, OCT, 12, 18, 0))
     expect(view).toEqual({ template: null, items: [] })
   })
+
+  test('items carry display names, with the repeated Free time numbered in template order', () => {
+    const view = fullDayView(readSnapshot(weekendStore()), at(2026, OCT, 12, 18, 0))
+
+    expect(view.items.map(i => i.displayName)).toEqual([
+      'Morning routine', 'Free time #1', 'Lunch', 'Free time #2', 'Dinner', 'Post dinner', 'Bedtime',
+    ])
+    expect(view.items.filter(i => i.current).map(i => i.displayName)).toEqual(['Free time #1'])
+  })
+})
+
+describe('entrySlotName', () => {
+  test('an entry logged in the second Free time is named Free time #2', () => {
+    const snap = readSnapshot(weekendStore())
+    const [, second] = freeTimes(snap)
+    const logged = entry('e1', 'hike', sectionIdNamed(snap, 'Free time'), at(2026, OCT, 12, 18, 0), second.id)
+
+    expect(entrySlotName(snap, logged)).toBe('Free time #2')
+  })
+
+  test('an entry logged in the basic day is named by its plain slot name', () => {
+    expect(entrySlotName(fixture(), entry('e1', 'gym', 'postWork', at(2026, OCT, 12, 18, 0), 'postWork')))
+      .toBe('Post work')
+  })
+
+  test('numbering is per template: a section used once in each of two templates is not numbered', () => {
+    const snap = fixture()
+    const bedtimeOfBasic = entry('e1', 'read', 'bedtime', at(2026, OCT, 12, 18, 0), 'bedtime')
+    expect(entrySlotName(snap, bedtimeOfBasic)).toBe('Bedtime')
+  })
+
+  test('an entry with no itemId is named by its section', () => {
+    const snap = readSnapshot(weekendStore())
+    const unlinked = entry('e1', 'hike', sectionIdNamed(snap, 'Free time'), at(2026, OCT, 12, 18, 0))
+
+    expect(entrySlotName(snap, unlinked)).toBe('Free time')
+  })
+
+  test('an entry whose item and section are both gone is named (removed)', () => {
+    const gone = entry('e1', 'gym', 'nowhere', at(2026, OCT, 12, 18, 0), 'deletedItem')
+
+    expect(entrySlotName(fixture(), gone)).toBe('(removed)')
+  })
+
+  test('an entry whose item was deleted but whose section still exists is named by the section', () => {
+    const deleted = entry('e1', 'gym', 'postWork', at(2026, OCT, 12, 18, 0), 'deletedItem')
+
+    expect(entrySlotName(fixture(), deleted)).toBe('Post work')
+  })
 })
 
 describe('journalByDay', () => {
@@ -208,6 +314,35 @@ describe('journalByDay', () => {
       { day: '2026-10-10', templateId: null, note: 'Rest day', entries: [] },
       { day: '2026-10-09', templateId: null, note: '', entries: [e1, e2] },
     ])
+  })
+})
+
+describe('journalDay', () => {
+  const e1 = entry('e1', 'gym', 'postWork', at(2026, OCT, 9, 18, 0))
+  const e2 = entry('e2', 'walk', 'postWork', at(2026, OCT, 12, 19, 0))
+  const e3 = entry('e3', 'read', 'bedtime', at(2026, OCT, 13, 0, 15)) // belongs to 10-12
+  const e4 = entry('e4', 'gym', 'postWork', at(2026, OCT, 12, 18, 0))
+
+  test('only that day\'s entries, oldest first, with the day record\'s template and note', () => {
+    const days: DayRecord[] = [
+      { day: '2026-10-12', templateId: 'basic', note: 'Tired' },
+      { day: '2026-10-09', templateId: 'late', note: 'Other day' },
+    ]
+    expect(journalDay(fixture({ journal: [e2, e3, e4, e1], days }), '2026-10-12')).toEqual({
+      day: '2026-10-12', templateId: 'basic', note: 'Tired', entries: [e4, e2, e3],
+    })
+  })
+
+  test('a day with nothing recorded has no entries, an empty note and no template', () => {
+    expect(journalDay(fixture({ journal: [e1] }), '2026-10-11')).toEqual({
+      day: '2026-10-11', templateId: null, note: '', entries: [],
+    })
+  })
+
+  test('an entry at 00:15 on the next morning belongs to the earlier day', () => {
+    const snap = fixture({ journal: [e3] })
+    expect(journalDay(snap, '2026-10-12').entries).toEqual([e3])
+    expect(journalDay(snap, '2026-10-13').entries).toEqual([])
   })
 })
 
