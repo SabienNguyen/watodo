@@ -135,7 +135,7 @@ describe('JournalScreen', () => {
     expect(screen.getByText('Gym')).toBeInTheDocument()
   })
 
-  test('an earlier day shows its template when a day record exists, else No template recorded', () => {
+  test('an earlier day shows its template when a day record exists, else Template not chosen', () => {
     renderWithWatodo(<JournalScreen />, { store: seededStore(), clock: MONDAY_1745 })
 
     previousDay()
@@ -145,17 +145,17 @@ describe('JournalScreen', () => {
 
     previousDay()
     expect(screen.getByRole('heading', { name: 'Fri 9 Oct' })).toBeInTheDocument()
-    expect(screen.getByText('No template recorded')).toBeInTheDocument()
+    expect(screen.getByText('Template not chosen')).toBeInTheDocument()
   })
 
-  test('a day with nothing logged shows Nothing logged. and No template recorded', () => {
+  test('a day with nothing logged shows Nothing logged. and Template not chosen', () => {
     renderWithWatodo(<JournalScreen />, { clock: MONDAY_1745 })
 
     previousDay()
 
     expect(screen.getByRole('heading', { name: 'Sun 11 Oct' })).toBeInTheDocument()
     expect(screen.getByText('Nothing logged.')).toBeInTheDocument()
-    expect(screen.getByText('No template recorded')).toBeInTheDocument()
+    expect(screen.getByText('Template not chosen')).toBeInTheDocument()
   })
 
   test('an entry logged at 00:15 on Tuesday appears under Monday', () => {
@@ -278,14 +278,14 @@ describe('Add entry', () => {
     const save = within(dialog).getByRole('button', { name: 'Save' })
     expect(save).toBeDisabled()
 
-    fireEvent.change(within(dialog).getByLabelText('Section'), { target: { value: sectionId(store, 'Post work') } })
+    fireEvent.change(within(dialog).getByLabelText('Slot'), { target: { value: sectionId(store, 'Post work') } })
     expect(save).toBeDisabled()
   })
 
   test('the Activity list offers only the chosen section activities', () => {
     const { store } = renderWithWatodo(<JournalScreen />, { clock: MONDAY_1745 })
     const dialog = openAddEntry()
-    const section = within(dialog).getByLabelText('Section')
+    const section = within(dialog).getByLabelText('Slot')
     const activity = within(dialog).getByLabelText('Activity')
 
     fireEvent.change(section, { target: { value: sectionId(store, 'Post work') } })
@@ -300,7 +300,7 @@ describe('Add entry', () => {
     const dialog = openAddEntry()
 
     fireEvent.change(within(dialog).getByLabelText('Day'), { target: { value: '2026-10-10' } })
-    fireEvent.change(within(dialog).getByLabelText('Section'), { target: { value: sectionId(store, 'Post dinner') } })
+    fireEvent.change(within(dialog).getByLabelText('Slot'), { target: { value: sectionId(store, 'Post dinner') } })
     fireEvent.change(within(dialog).getByLabelText('Activity'), { target: { value: activityId(store, 'Guitar') } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
 
@@ -324,7 +324,7 @@ describe('Add entry', () => {
     const dialog = openAddEntry()
     expect(within(dialog).getByLabelText('Day')).toHaveValue('2026-10-10')
     expect(within(dialog).getByLabelText('Day')).toHaveAttribute('max', '2026-10-12')
-    fireEvent.change(within(dialog).getByLabelText('Section'), { target: { value: sectionId(store, 'Post dinner') } })
+    fireEvent.change(within(dialog).getByLabelText('Slot'), { target: { value: sectionId(store, 'Post dinner') } })
     fireEvent.change(within(dialog).getByLabelText('Activity'), { target: { value: activityId(store, 'Read') } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
 
@@ -340,7 +340,7 @@ describe('Add entry', () => {
     const { store } = renderWithWatodo(<JournalScreen />, { clock: MONDAY_1745 })
     const dialog = openAddEntry()
 
-    fireEvent.change(within(dialog).getByLabelText('Section'), { target: { value: sectionId(store, 'Post work') } })
+    fireEvent.change(within(dialog).getByLabelText('Slot'), { target: { value: sectionId(store, 'Post work') } })
     fireEvent.change(within(dialog).getByLabelText('Activity'), { target: { value: activityId(store, 'Walk') } })
     fireEvent.change(within(dialog).getByLabelText('Note'), { target: { value: 'by the river' } })
     fireEvent.change(within(dialog).getByLabelText('Minutes'), { target: { value: '25' } })
@@ -353,38 +353,92 @@ describe('Add entry', () => {
 })
 
 describe('Show full day', () => {
+  /** The seeded store with today (Mon 12 Oct) confirmed as the basic day. */
+  function confirmedTodayStore(): WatodoStore {
+    const store = seededStore()
+    confirmDay(store, MONDAY_1745, basicTemplateId(store))
+    return store
+  }
+
   test('sits above the entries on today, collapsed by default', () => {
-    renderWithWatodo(<JournalScreen />, { store: seededStore(), clock: MONDAY_1745 })
+    renderWithWatodo(<JournalScreen />, { store: confirmedTodayStore(), clock: MONDAY_1745 })
 
     expect(screen.getAllByRole('button', { name: /full day/ })).toHaveLength(1)
     const button = screen.getByRole('button', { name: 'Show full day' })
     expect(button).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByText('Wake up, brush teeth, get ready')).toBeNull()
+    for (const name of ['Wake up', 'Brush teeth', 'Change clothes']) {
+      expect(screen.queryByText(name)).toBeNull()
+    }
     expect(button.compareDocumentPosition(rowOf('Gym')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  test('is present when viewing today and absent on another day', () => {
-    renderWithWatodo(<JournalScreen />, { store: seededStore(), clock: MONDAY_1745 })
+  test('is present when viewing a confirmed today and absent on another day', () => {
+    renderWithWatodo(<JournalScreen />, { store: confirmedTodayStore(), clock: MONDAY_1745 })
 
     expect(screen.getByRole('button', { name: 'Show full day' })).toBeInTheDocument()
     previousDay()
     expect(screen.queryByRole('button', { name: /full day/ })).toBeNull()
   })
 
-  test('pressing it shows the six basic-day items in order with Post work current, and pressing again hides them', () => {
+  test('is absent on a fresh today, where Template not chosen stays', () => {
     renderWithWatodo(<JournalScreen />, { store: finishedStore(), clock: MONDAY_1745 })
+
+    expect(screen.getByText('Template not chosen')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /full day/ })).toBeNull()
+  })
+
+  test('after confirming today, its template name shows and Show full day is present', () => {
+    const store = finishedStore()
+    confirmDay(store, MONDAY_1745, basicTemplateId(store))
+    renderWithWatodo(<JournalScreen />, { store, clock: MONDAY_1745 })
+
+    expect(screen.getByText('Basic day')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Show full day' })).toBeInTheDocument()
+  })
+
+  test('after logging through the real flow and confirming with the pending tap, Show full day is present', () => {
+    const store = finishedStore()
+    const result = logActivity(store, MONDAY_1745, activityId(store, 'Gym'))
+    if (result.status !== 'needs-template') throw new Error(`expected needs-template, got ${result.status}`)
+    confirmDay(store, MONDAY_1745, result.guessTemplateId, result.pending)
+    renderWithWatodo(<JournalScreen />, { store, clock: MONDAY_1745 })
+
+    expect(screen.getByText('Gym')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Show full day' })).toBeInTheDocument()
+  })
+
+  test('a past day shows no Show full day, whether or not that day is confirmed', () => {
+    renderWithWatodo(<JournalScreen />, { store: confirmedTodayStore(), clock: MONDAY_1745 })
+
+    previousDay()
+    expect(screen.getByRole('heading', { name: 'Sun 11 Oct' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /full day/ })).toBeNull()
+
+    previousDay()
+    expect(screen.getByRole('heading', { name: 'Sat 10 Oct' })).toBeInTheDocument()
+    expect(screen.getByText('Basic day')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /full day/ })).toBeNull()
+  })
+
+  test('pressing it shows the ten basic-day items in order with Post work current, and pressing again hides them', () => {
+    const store = finishedStore()
+    confirmDay(store, MONDAY_1745, basicTemplateId(store))
+    renderWithWatodo(<JournalScreen />, { store, clock: MONDAY_1745 })
 
     fireEvent.click(screen.getByRole('button', { name: 'Show full day' }))
 
     const hide = screen.getByRole('button', { name: 'Hide full day' })
     expect(hide).toHaveAttribute('aria-expanded', 'true')
     const rows = screen.getAllByRole('listitem')
-    const names = ['Wake up, brush teeth, get ready', 'Work', 'Post work', 'Dinner', 'Post dinner', 'Bedtime']
-    expect(rows).toHaveLength(6)
+    const names = [
+      'Wake up', 'Brush teeth', 'Change clothes', 'Work', 'Post work', 'Dinner', 'Post dinner', 'Bedtime',
+      'Brush teeth', 'Sleep',
+    ]
+    expect(rows).toHaveLength(10)
     rows.forEach((row, index) => {
       expect(row).toHaveTextContent(names[index])
     })
-    expect(rows[2]).toHaveAttribute('aria-current', 'true')
+    expect(rows[4]).toHaveAttribute('aria-current', 'true')
     const list = rows[0].closest('ol') as HTMLElement
     expect(within(list).queryAllByRole('button')).toHaveLength(0)
     expect(list.textContent).not.toMatch(/\d{1,2}:\d{2}/)

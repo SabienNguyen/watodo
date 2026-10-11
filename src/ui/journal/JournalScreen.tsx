@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
 import {
-  addDays, addPastEntry, dayKeyOf, deleteEntry, editEntry, entrySlotName, fullDayView, journalDay, sectionActivities,
+  addDays, addPastEntry, dayKeyOf, deleteEntry, editEntry, entrySlotName, journalDay, nowView, sectionActivities,
   setDayNote, type DayKey, type Id, type JournalEntry,
 } from '@/domain'
 import { Button } from '@/components/ui/button'
@@ -27,9 +27,9 @@ export function JournalScreen() {
   const isToday = viewed === today
   const day = journalDay(snap, viewed)
   const templateName = day.templateId === null
-    ? 'No template recorded'
+    ? 'Template not chosen'
     : (snap.templates.find(template => template.id === day.templateId)?.name ?? '(removed)')
-  const hasFullDay = isToday && fullDayView(snap, now).template !== null
+  const hasFullDay = isToday && nowView(snap, now).guess.confirmed
 
   return (
     <div className="flex flex-col gap-8">
@@ -240,13 +240,13 @@ function AddEntryDialog({ today, initialDay, onClose }: {
           />
         </div>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="add-entry-section">Section</Label>
+          <Label htmlFor="add-entry-section">Slot</Label>
           <NativeSelect
             id="add-entry-section"
             value={sectionId}
             onChange={e => chooseSection(e.target.value)}
           >
-            <option value="">Choose a section</option>
+            <option value="">Choose a slot</option>
             {snap.sections.map(section => (
               <option key={section.id} value={section.id}>{section.name}</option>
             ))}

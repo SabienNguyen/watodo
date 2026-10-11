@@ -15,35 +15,41 @@ export const STARTERS: Starter[] = [
   {
     key: 'office', name: 'Office day', labelName: 'Work day', labelWeekdays: WORK_DAYS,
     steps: [
-      fixed('Morning routine'), fixed('Commute'), fixed('Work'), slot('Post work'),
-      fixed('Dinner'), slot('Post dinner'), slot('Bedtime'),
+      fixed('Wake up'), fixed('Brush teeth'), fixed('Change clothes'), fixed('Commute'), fixed('Work'),
+      slot('Post work'), fixed('Dinner'), slot('Post dinner'), fixed('Shower'), slot('Post-shower'),
+      slot('Pre-sleep'), fixed('Brush teeth'), fixed('Sleep'),
     ],
   },
   {
     key: 'wfh', name: 'Work from home', labelName: 'Work day', labelWeekdays: WORK_DAYS,
     steps: [
-      fixed('Morning routine'), fixed('Work'), slot('Lunch break'), fixed('Work'), slot('Post work'),
-      fixed('Dinner'), slot('Post dinner'), slot('Bedtime'),
+      fixed('Wake up'), fixed('Brush teeth'), fixed('Change clothes'), fixed('Work'), slot('Lunch break'),
+      fixed('Work'), slot('Post work'), fixed('Dinner'), slot('Post dinner'), slot('Bedtime'),
+      fixed('Brush teeth'), fixed('Sleep'),
     ],
   },
   {
     key: 'school', name: 'School day', labelName: 'School day', labelWeekdays: [],
     steps: [
-      fixed('Morning routine'), fixed('School'), slot('After school'), fixed('Dinner'),
-      fixed('Homework'), slot('Post dinner'), slot('Bedtime'),
+      fixed('Wake up'), fixed('Brush teeth'), fixed('Change clothes'), fixed('School'), slot('After school'),
+      fixed('Dinner'), fixed('Homework'), slot('Post dinner'), slot('Bedtime'),
+      fixed('Brush teeth'), fixed('Sleep'),
     ],
   },
   {
     key: 'weekend', name: 'Weekend', labelName: 'Weekend', labelWeekdays: [5, 6],
     steps: [
-      fixed('Morning routine'), slot('Free time'), fixed('Lunch'), slot('Free time'),
-      fixed('Dinner'), slot('Post dinner'), slot('Bedtime'),
+      fixed('Wake up'), fixed('Brush teeth'), fixed('Change clothes'), slot('Free time'), fixed('Lunch'),
+      slot('Free time'), fixed('Dinner'), slot('Post dinner'), slot('Bedtime'),
+      fixed('Brush teeth'), fixed('Sleep'),
     ],
   },
   {
     key: 'dayoff', name: 'Day off', labelName: 'Day off', labelWeekdays: [],
     steps: [
-      fixed('Morning routine'), slot('Free time'), fixed('Dinner'), slot('Post dinner'), slot('Bedtime'),
+      fixed('Wake up'), fixed('Brush teeth'), fixed('Change clothes'), slot('Free time'), fixed('Dinner'),
+      slot('Post dinner'), slot('Bedtime'),
+      fixed('Brush teeth'), fixed('Sleep'),
     ],
   },
 ]
@@ -56,6 +62,8 @@ export const SUGGESTED_ACTIVITIES: Record<string, string[]> = {
   'Lunch break': ['Walk', 'Read'],
   'After school': ['Sports', 'Walk', 'Read'],
   'Free time': ['Hike', 'Cook something new', 'Read', 'Call family'],
+  'Post-shower': ['Skincare', 'Stretch', 'Read'],
+  'Pre-sleep': ['Journal', 'Read', 'Meditate'],
 }
 
 function sameName(a: string, b: string): boolean {

@@ -30,19 +30,24 @@ describe('STARTERS', () => {
   test('each starter has the agreed steps', () => {
     const stepsOf = (key: string) => STARTERS.find(starter => starter.key === key)?.steps
     expect(stepsOf('office')).toEqual([
-      F('Morning routine'), F('Commute'), F('Work'), S('Post work'), F('Dinner'), S('Post dinner'), S('Bedtime'),
+      F('Wake up'), F('Brush teeth'), F('Change clothes'), F('Commute'), F('Work'), S('Post work'),
+      F('Dinner'), S('Post dinner'), F('Shower'), S('Post-shower'), S('Pre-sleep'), F('Brush teeth'), F('Sleep'),
     ])
     expect(stepsOf('wfh')).toEqual([
-      F('Morning routine'), F('Work'), S('Lunch break'), F('Work'), S('Post work'), F('Dinner'), S('Post dinner'), S('Bedtime'),
+      F('Wake up'), F('Brush teeth'), F('Change clothes'), F('Work'), S('Lunch break'), F('Work'), S('Post work'),
+      F('Dinner'), S('Post dinner'), S('Bedtime'), F('Brush teeth'), F('Sleep'),
     ])
     expect(stepsOf('school')).toEqual([
-      F('Morning routine'), F('School'), S('After school'), F('Dinner'), F('Homework'), S('Post dinner'), S('Bedtime'),
+      F('Wake up'), F('Brush teeth'), F('Change clothes'), F('School'), S('After school'), F('Dinner'),
+      F('Homework'), S('Post dinner'), S('Bedtime'), F('Brush teeth'), F('Sleep'),
     ])
     expect(stepsOf('weekend')).toEqual([
-      F('Morning routine'), S('Free time'), F('Lunch'), S('Free time'), F('Dinner'), S('Post dinner'), S('Bedtime'),
+      F('Wake up'), F('Brush teeth'), F('Change clothes'), S('Free time'), F('Lunch'), S('Free time'),
+      F('Dinner'), S('Post dinner'), S('Bedtime'), F('Brush teeth'), F('Sleep'),
     ])
     expect(stepsOf('dayoff')).toEqual([
-      F('Morning routine'), S('Free time'), F('Dinner'), S('Post dinner'), S('Bedtime'),
+      F('Wake up'), F('Brush teeth'), F('Change clothes'), S('Free time'), F('Dinner'), S('Post dinner'), S('Bedtime'),
+      F('Brush teeth'), F('Sleep'),
     ])
   })
 })
@@ -56,6 +61,8 @@ describe('SUGGESTED_ACTIVITIES', () => {
       'Lunch break': ['Walk', 'Read'],
       'After school': ['Sports', 'Walk', 'Read'],
       'Free time': ['Hike', 'Cook something new', 'Read', 'Call family'],
+      'Post-shower': ['Skincare', 'Stretch', 'Read'],
+      'Pre-sleep': ['Journal', 'Read', 'Meditate'],
     })
   })
 })

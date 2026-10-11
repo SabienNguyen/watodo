@@ -37,6 +37,8 @@ const WINDOWS: Partial<Record<string, [number, number]>> = {
   'Post dinner': [19 * 60 + 30, 20 * 60 + 30],
   'Bedtime': [21 * 60 + 30, 22 * 60 + 30],
   'After school': [15 * 60, 16 * 60 + 30],
+  'Post-shower': [21 * 60, 22 * 60],
+  'Pre-sleep': [22 * 60, 23 * 60],
 };
 /** Free time, and any slot without a window of its own. */
 const DAYTIME: [number, number] = [10 * 60, 17 * 60];

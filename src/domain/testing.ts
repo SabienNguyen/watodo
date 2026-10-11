@@ -32,6 +32,12 @@ export function basicDay(): BasicDayFixture {
     templateId: snap.templates[0].id,
     sectionId: (name: string) => named(snap.sections, name),
     activityId: (name: string) => named(snap.activities, name),
-    itemId: (name: string) => named(snap.items, name),
+    itemId: (name: string) => {
+      // The basic day has two Brush teeth steps: a name alone cannot pick one, so the test must select it by position.
+      if (snap.items.filter(item => item.name === name).length > 1) {
+        throw new Error(`more than one item named ${name}; select it by position`);
+      }
+      return named(snap.items, name);
+    },
   };
 }

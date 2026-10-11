@@ -251,7 +251,8 @@ describe('fullDayView', () => {
     const view = fullDayView(readSnapshot(weekendStore()), at(2026, OCT, 12, 18, 0))
 
     expect(view.items.map(i => i.displayName)).toEqual([
-      'Morning routine', 'Free time #1', 'Lunch', 'Free time #2', 'Dinner', 'Post dinner', 'Bedtime',
+      'Wake up', 'Brush teeth', 'Change clothes', 'Free time #1', 'Lunch', 'Free time #2', 'Dinner', 'Post dinner',
+      'Bedtime', 'Brush teeth', 'Sleep',
     ])
     expect(view.items.filter(i => i.current).map(i => i.displayName)).toEqual(['Free time #1'])
   })

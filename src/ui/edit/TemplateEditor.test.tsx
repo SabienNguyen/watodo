@@ -44,7 +44,9 @@ function basicEdit(store: WatodoStore): TemplateDraft {
 
 const nameField = () => screen.getByRole('textbox', { name: 'Name' })
 const saveButton = () => screen.getByRole('button', { name: 'Save' })
-const fixedNames = () => screen.getAllByRole('textbox', { name: 'Step name' }).map(f => (f as HTMLInputElement).value)
+/** The visible text of every option in the document. */
+const optionTexts = () => Array.from(document.querySelectorAll('option'), option => option.textContent ?? '')
+const fixedNames = () =>screen.getAllByRole('textbox', { name: 'Step name' }).map(f => (f as HTMLInputElement).value)
 
 /** The row (li) of the step whose drag handle is labelled with this name. */
 function rowNamed(stepName: string): HTMLElement {
@@ -86,27 +88,59 @@ describe('TemplateEditor', () => {
   test('lists the steps in order, fixed steps as name fields and slots as selects', () => {
     open(starter('office'))
 
-    expect(fixedNames()).toEqual(['Morning routine', 'Commute', 'Work', 'Dinner'])
+    expect(fixedNames()).toEqual([
+      'Wake up', 'Brush teeth', 'Change clothes', 'Commute', 'Work', 'Dinner', 'Shower', 'Brush teeth', 'Sleep',
+    ])
     const slots = screen.getAllByRole('combobox', { name: 'Slot' }) as HTMLSelectElement[]
-    expect(slots.map(select => select.value)).toEqual(['Post work', 'Post dinner', 'Bedtime'])
-    expect(screen.getAllByText('fixed')).toHaveLength(4)
-    expect(screen.getAllByText('slot')).toHaveLength(3)
+    expect(slots.map(select => select.value)).toEqual(['Post work', 'Post dinner', 'Post-shower', 'Pre-sleep'])
+    expect(screen.getAllByText('fixed')).toHaveLength(9)
+    expect(screen.getAllByText('slot')).toHaveLength(4)
   })
 
   test('the Label select lists the labels, and a new label is an extra selected option', () => {
     open(starter('weekend'))
 
     const label = screen.getByRole('combobox', { name: 'Label' })
-    expect(label).toHaveDisplayValue('Weekend (new)')
+    expect(label).toHaveDisplayValue('Weekend')
     expect(within(label).getByRole('option', { name: 'Work day' })).toBeInTheDocument()
   })
 
-  test('each row has a drag handle labelled with its step name', () => {
+  test('no option in the editor is marked (new), and a new slot is an extra selected option', () => {
+    open(starter('weekend'))
+
+    expect(optionTexts().filter(text => text.includes('(new)'))).toEqual([])
+    expect(optionTexts()).toContain('Weekend')
+    expect(screen.getAllByRole('combobox', { name: 'Slot' })[0]).toHaveDisplayValue('Free time')
+  })
+
+  test('a new label or slot whose name matches an existing one is shown once, as that one', () => {
+    const store = finishedStore()
+    open({
+      name: 'Copy of work',
+      label: { newName: 'work DAY', weekdays: [0] },
+      steps: [{ kind: 'slot', slotName: 'bedtime' }],
+    }, store)
+
+    const label = screen.getByRole('combobox', { name: 'Label' })
+    expect(label).toHaveDisplayValue('Work day')
+    expect(within(label).getAllByRole('option')).toHaveLength(1)
+    const slot = screen.getByRole('combobox', { name: 'Slot' })
+    expect(slot).toHaveDisplayValue('Bedtime')
+    expect(within(slot).getAllByRole('option', { name: 'Bedtime' })).toHaveLength(1)
+    expect(optionTexts().filter(text => text.includes('(new)'))).toEqual([])
+  })
+
+  test('each row has a drag handle labelled with its step name, in order', () => {
     open(starter('office'))
 
-    for (const name of ['Morning routine', 'Commute', 'Work', 'Post work', 'Dinner', 'Post dinner', 'Bedtime']) {
-      expect(screen.getByRole('button', { name: `Drag to reorder ${name}` })).toBeInTheDocument()
-    }
+    // Two steps are named Brush teeth, so the handles are checked as a list, not looked up one name at a time.
+    const officeStepNames = [
+      'Wake up', 'Brush teeth', 'Change clothes', 'Commute', 'Work', 'Post work',
+      'Dinner', 'Post dinner', 'Shower', 'Post-shower', 'Pre-sleep', 'Brush teeth', 'Sleep',
+    ]
+    const handles = screen.getAllByRole('button', { name: /^Drag to reorder / })
+    expect(handles.map(handle => handle.getAttribute('aria-label')))
+      .toEqual(officeStepNames.map(name => `Drag to reorder ${name}`))
   })
 
   test('Cancel calls onCancel and leaves the store unchanged', () => {
@@ -168,7 +202,10 @@ describe('TemplateEditor', () => {
 
     const templateId = onSaved.mock.calls[0][0] as Id
     const names = itemsOf(store, templateId).map(item => item.name)
-    expect(names).toEqual(['Morning routine', 'Work', 'Post work', 'Dinner', 'Post dinner', 'Bedtime', 'Stretch'])
+    expect(names).toEqual([
+      'Wake up', 'Brush teeth', 'Change clothes', 'Work', 'Post work', 'Dinner', 'Post dinner',
+      'Shower', 'Post-shower', 'Pre-sleep', 'Brush teeth', 'Sleep', 'Stretch',
+    ])
   })
 
   test('Add slot uses the first existing slot, and it shares that slot and its activities', () => {
@@ -253,7 +290,7 @@ describe('TemplateEditor', () => {
     const snap = readSnapshot(store)
     expect(snap.templates.map(template => template.name)).toEqual(['Basic day', 'Basic day copy'])
     expect(onSaved.mock.calls[0][0]).not.toBe(original)
-    expect(itemsOf(store, original)).toHaveLength(6)
+    expect(itemsOf(store, original)).toHaveLength(10)
   })
 })
 

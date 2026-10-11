@@ -17,7 +17,7 @@ test('the starter menu is customising until finished', () => {
   expect(snap.labels[0]).toMatchObject({ name: 'Work day', weekdays: [0, 1, 2, 3, 4] });
   expect(snap.templates).toHaveLength(1);
   expect(snap.defaultTemplateId).toBe(snap.templates[0].id);
-  expect(snap.items).toHaveLength(6);
+  expect(snap.items).toHaveLength(10);
   expect(snap.sections).toHaveLength(3);
   expect(snap.activities).toHaveLength(7);
   expect(snap.listings).toHaveLength(9);
@@ -31,12 +31,16 @@ test('the starter items are in the agreed order, with positions and no times', (
   setUpStarter(store);
   const items = readSnapshot(store).items;
   expect(items.map(({ kind, name, position }) => [kind, name, position])).toEqual([
-    ['fixed', 'Wake up, brush teeth, get ready', 0],
-    ['fixed', 'Work', 1],
-    ['slot', 'Post work', 2],
-    ['fixed', 'Dinner', 3],
-    ['slot', 'Post dinner', 4],
-    ['slot', 'Bedtime', 5],
+    ['fixed', 'Wake up', 0],
+    ['fixed', 'Brush teeth', 1],
+    ['fixed', 'Change clothes', 2],
+    ['fixed', 'Work', 3],
+    ['slot', 'Post work', 4],
+    ['fixed', 'Dinner', 5],
+    ['slot', 'Post dinner', 6],
+    ['slot', 'Bedtime', 7],
+    ['fixed', 'Brush teeth', 8],
+    ['fixed', 'Sleep', 9],
   ]);
   for (const itemId of store.getRowIds(TABLE.items)) {
     expect(store.getRow(TABLE.items, itemId)).not.toHaveProperty('start');

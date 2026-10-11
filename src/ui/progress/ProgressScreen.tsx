@@ -55,7 +55,7 @@ export function ProgressScreen() {
 
       {view.bySection.length > 0 && (
         <section aria-labelledby="by-section-heading" className="flex flex-col gap-4">
-          <h2 id="by-section-heading" className="text-lg font-semibold">By section</h2>
+          <h2 id="by-section-heading" className="text-lg font-semibold">By slot</h2>
           <ul className="flex flex-col gap-3">
             {view.bySection.map(({ sectionId, count }) => (
               <li key={sectionId} className="flex items-baseline justify-between gap-2">

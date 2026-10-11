@@ -69,7 +69,7 @@ describe('ProgressScreen', () => {
   test('by section counts entries per section', () => {
     renderWithWatodo(<ProgressScreen />, { store: lastWeekStore(), clock: MONDAY_1745 })
 
-    const bySection = within(screen.getByRole('region', { name: 'By section' }))
+    const bySection = within(screen.getByRole('region', { name: 'By slot' }))
     const rows = bySection.getAllByRole('listitem')
     expect(rows[0]).toHaveTextContent('Post work')
     expect(rows[0]).toHaveTextContent('2 times')

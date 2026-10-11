@@ -201,7 +201,7 @@ function SlotView({ part, section, onBack }: { part: Part; section: Section; onB
     <EditingFrame part={part} heading={section.name} onBack={onBack}>
       <div className="flex flex-col gap-1">
         <EditableText
-          aria-label="Section name"
+          aria-label="Slot name"
           value={section.name}
           onCommit={name => renameSection(store, section.id, name)}
         />

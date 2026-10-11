@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, screen, within } from '@testing-library/react'
+import { fireEvent, screen } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 import { createWatodoStore, finishSetup, readSnapshot, setUpStarter, type WatodoStore } from '@/domain'
 import { renderWithWatodo } from '@/ui/testing'
@@ -39,15 +39,13 @@ describe('StarterPicker', () => {
     expect(screen.getByRole('button', { name: 'Blank' })).toBeInTheDocument()
   })
 
-  test('shows each starter steps under its name, slots by their slot name', () => {
+  test('each starter button is named by the starter name alone, and the dialog shows no steps line', () => {
     renderPicker()
 
-    const office = screen.getByRole('button', { name: 'Office day' })
-    expect(office).toHaveAccessibleDescription(
-      'Morning routine · Commute · Work · Post work · Dinner · Post dinner · Bedtime',
-    )
-    expect(within(office).getByText('Morning routine · Commute · Work · Post work · Dinner · Post dinner · Bedtime'))
-      .toBeInTheDocument()
+    for (const name of STARTER_NAMES) {
+      expect(screen.getByRole('button', { name })).toHaveAccessibleName(name)
+    }
+    expect(screen.getByRole('dialog').textContent).not.toContain(' · ')
   })
 
   test('the copy heading shows when the user has templates', () => {
@@ -94,7 +92,7 @@ describe('StarterPicker', () => {
     const draft = onPick.mock.calls[0][0]
     expect(draft.name).toBe('Basic day copy')
     expect(draft.templateId).toBeUndefined()
-    expect(draft.steps).toHaveLength(6)
+    expect(draft.steps).toHaveLength(10)
   })
 
   test('Blank calls onPick with an empty draft', () => {

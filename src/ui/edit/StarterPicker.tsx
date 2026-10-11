@@ -1,6 +1,5 @@
-import { useId } from 'react'
 import {
-  blankDraft, draftFromStarter, draftFromTemplate, STARTERS, type Starter, type TemplateDraft,
+  blankDraft, draftFromStarter, draftFromTemplate, STARTERS, type TemplateDraft,
 } from '@/domain'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -27,11 +26,14 @@ export function StarterPicker({ open, onPick, onClose }: {
 
         <div className="flex flex-col gap-2">
           {STARTERS.map(starter => (
-            <StarterButton
+            <Button
               key={starter.key}
-              starter={starter}
+              variant="outline"
+              className="h-12 justify-start text-base"
               onClick={() => pick(draftFromStarter(snap, starter.key))}
-            />
+            >
+              {starter.name}
+            </Button>
           ))}
         </div>
 
@@ -60,23 +62,5 @@ export function StarterPicker({ open, onPick, onClose }: {
         </div>
       </DialogContent>
     </Dialog>
-  )
-}
-
-function StarterButton({ starter, onClick }: { starter: Starter; onClick(): void }) {
-  const stepsId = useId()
-  const steps = starter.steps.map(step => (step.kind === 'fixed' ? step.name : step.slotName)).join(' · ')
-
-  return (
-    <Button
-      variant="outline"
-      className="h-auto flex-col items-start gap-1 px-4 py-3 text-left whitespace-normal"
-      aria-label={starter.name}
-      aria-describedby={stepsId}
-      onClick={onClick}
-    >
-      <span className="text-base">{starter.name}</span>
-      <span id={stepsId} className="text-sm font-normal text-muted-foreground">{steps}</span>
-    </Button>
   )
 }

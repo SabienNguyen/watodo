@@ -103,7 +103,7 @@ export function NowScreen() {
           <h2 className="text-xl font-semibold">{positionName}</h2>
 
           {view.activities.length === 0 && (
-            <p className="text-muted-foreground">No activities in this section yet.</p>
+            <p className="text-muted-foreground">No activities in this slot yet.</p>
           )}
           {view.activities.map(({ activity, lastDone }) => (
             <Button

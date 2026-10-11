@@ -23,13 +23,13 @@ function weekendStore(): WatodoStore {
 }
 
 describe('FullDay', () => {
-  test('numbers the repeated Free time: row 2 is Free time #1 and row 4 is Free time #2', () => {
+  test('numbers the repeated Free time: row 4 is Free time #1 and row 6 is Free time #2', () => {
     renderWithWatodo(<FullDay />, { store: weekendStore() })
 
     const rows = screen.getAllByRole('listitem')
-    expect(rows).toHaveLength(7)
-    expect(rows[1]).toHaveTextContent('Free time #1')
-    expect(rows[3]).toHaveTextContent('Free time #2')
+    expect(rows).toHaveLength(11)
+    expect(rows[3]).toHaveTextContent('Free time #1')
+    expect(rows[5]).toHaveTextContent('Free time #2')
     expect(screen.queryByText('Free time')).toBeNull()
   })
 
@@ -38,14 +38,18 @@ describe('FullDay', () => {
 
     expect(screen.queryByRole('heading')).toBeNull()
     const rows = screen.getAllByRole('listitem')
-    expect(rows).toHaveLength(6)
+    expect(rows).toHaveLength(10)
     const names = [
-      'Wake up, brush teeth, get ready',
+      'Wake up',
+      'Brush teeth',
+      'Change clothes',
       'Work',
       'Post work',
       'Dinner',
       'Post dinner',
       'Bedtime',
+      'Brush teeth',
+      'Sleep',
     ]
     rows.forEach((row, index) => {
       expect(row).toHaveTextContent(names[index])

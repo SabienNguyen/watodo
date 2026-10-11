@@ -12,10 +12,10 @@ TypeScript, React + Vite, Tailwind, shadcn/ui, TinyBase (`MergeableStore`, saved
 
 - **Template**: the shape of one type of day. An ordered list of items with no times. An item is a **fixed step** (Work, Dinner: nothing to choose, display only, never logged) or a **slot** (Post work).
 - **Slot**: a named list of activities, such as Post work with Gym, Walk and Read. A slot and its activity list are one thing: every template that includes the Post work slot shows the same activities, so a list is only ever filled out once. Renaming a slot renames it in every template. The same slot can appear more than once in a template. When it does, each occurrence is shown with a number in template order (Free time #1, Free time #2, Free time #3) wherever a particular occurrence is meant: the Now screen's slot row and heading, the full day list, and journal entries. A slot that appears once has no number. The slot itself, its activity list, and Progress totals are not numbered. (In the code and stored data a slot's list is called a section.)
-- **Activity**: defined once, can be listed in several sections. "Last done" is shared across sections.
+- **Activity**: defined once, can be listed in several slots. "Last done" is shared across slots.
 - **Label**: a user-created name for a kind of day (Work day, Weekend) with the weekdays it usually covers. Each template has exactly one label; a label can have several templates.
 - **Default template**: one template is always the default, used when no label covers today.
-- **Journal**: one entry per logged activity (activity, section, the slot it was logged in, optional note and duration). The moment of each log is recorded but never shown.
+- **Journal**: one entry per logged activity (activity, slot: the slot it was logged in, optional note and duration). The moment of each log is recorded but never shown.
 - **No clock times anywhere on screen.** Templates have no times, and the app never displays the time of a log. Dates are shown; times are not.
 - **Day**: a day runs from 04:00 to 04:00. A log at 00:15 belongs to the evening before.
 
@@ -37,14 +37,14 @@ The app works out the current slot from what you last did, not from the clock. F
 
 ### Now screen
 - A row of today's slots with the current one marked; tapping one makes it the current slot.
-- The current slot's name and its section's activities in stable order, each with "last: today / yesterday / 3 days ago / never". Tapping one logs it.
+- The current slot's name and its slot's activities in stable order, each with "last: today / yesterday / 3 days ago / never". Tapping one logs it.
 - After a log: a bar for 6 seconds with **Undo** and **Add note** (note and duration, both optional).
 - A template with no slots says so and points to Edit.
 
 ### Other screens
-- **Full day**: in the Journal, when viewing today, a `Show full day` control that expands today's whole template in order, fixed steps and slots, with no times and the current slot highlighted. Nothing in it can be tapped. It is collapsed by default. There is no separate Day tab and the Now screen does not show it; the tabs are Now, Journal, Progress, Edit.
+- **Full day**: in the Journal, when viewing today, a `Show full day` control that expands today's whole template in order, fixed steps and slots, with no times and the current slot highlighted. Nothing in it can be tapped. It is collapsed by default. There is no separate Day tab and the Now screen does not show it; the tabs are Now, Journal, Progress, Edit. The control is shown only once today's template has been confirmed (recorded at the first log or by switching template). Before that the Journal says `Template not chosen` for today and offers no full day.
 - **Journal**: one day at a time. The date is centred at the top with an arrow on each side: left goes to the day before, right to the day after, and right is disabled on today. It opens on today. Every day can be visited, including days with nothing logged. The day shows its template, its entries in the order they were logged (no times), and its note. Entries can be deleted, have their note and duration edited, and be added to the day being viewed. A `Back to today` control appears on any other day.
-- **Progress**: counts per activity and per section over 7, 30 or 90 days, and a 4-week dot strip per activity.
+- **Progress**: counts per activity and per slot over 7, 30 or 90 days, and a 4-week dot strip per activity.
 - **Edit**: three tabs across the top, `Slots`, `Templates` and `Labels`, showing one part at a time instead of one long page. Each tab is a plain list of names (for example Post work, Post dinner, Free time). Tapping a name goes to that item's own editing view, which replaces the list and has a control to go back. A slot's view has its name and activities; a label's view has its name and weekdays; a template's view is the template editor (name, label, steps) with Save and Cancel, plus Copy, Make default and Delete. Slots and their activities; labels and their weekdays; templates (new from a starter, copy, edit, delete, set default).
 - **Creating a template**: `New template` offers starters (Office day, Work from home, School day, Weekend, Day off), a copy of any of your own templates, or Blank. Picking one adds nothing to your templates: it opens the template editor on a draft. The template exists only once you press Save; Cancel discards the draft. Copy and Edit work the same way: changes apply on Save. A starter's slots reuse your existing slots of the same name; slots you do not have yet are created on Save with a few suggested activities.
 - **Template editor**: name, label, and the ordered steps. Steps are reordered by dragging. A step is a fixed step with a name, or a slot chosen from your slots or created by typing a new name.

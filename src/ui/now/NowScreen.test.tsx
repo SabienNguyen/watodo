@@ -220,6 +220,8 @@ describe('NowScreen', () => {
 
     expect(screen.queryByRole('button', { name: /full day/ })).toBeNull()
     expect(screen.queryAllByRole('listitem')).toHaveLength(0)
-    expect(screen.queryByText('Wake up, brush teeth, get ready')).toBeNull()
+    for (const name of ['Wake up', 'Brush teeth', 'Change clothes']) {
+      expect(screen.queryByText(name)).toBeNull()
+    }
   })
 })

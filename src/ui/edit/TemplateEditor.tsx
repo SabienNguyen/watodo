@@ -16,6 +16,9 @@ import { useSnapshot, useWatodo } from '@/ui/hooks'
 const NEW_LABEL = '__new-label__'
 const NEW_SLOT = '__new-slot__'
 
+/** Names match the way save resolves them: trimmed and case-insensitive. */
+const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
+
 /** A step being edited, with the local key its sortable row needs and whether its slot is being typed. */
 type Row = DraftStep & { key: string; typingNew: boolean }
 
@@ -65,6 +68,10 @@ export function TemplateEditorForm({ draft, onSaved, onCancel }: {
     draft.steps.map(step => ({ ...step, key: crypto.randomUUID(), typingNew: false })))
 
   const trimmedName = name.trim()
+  // A proposed new label whose name matches an existing label is that label: save reuses it, so it is shown once.
+  const matchingLabel = proposedLabel === null
+    ? undefined
+    : snap.labels.find(item => sameName(item.name, proposedLabel.newName))
 
   const onDragEnd = (event: DragEndEvent) => {
     if (event.canceled) return
@@ -117,14 +124,14 @@ export function TemplateEditorForm({ draft, onSaved, onCancel }: {
           <Label htmlFor={`${formId}-label`}>Label</Label>
           <NativeSelect
             id={`${formId}-label`}
-            value={'id' in label ? label.id : NEW_LABEL}
+            value={'id' in label ? label.id : (matchingLabel?.id ?? NEW_LABEL)}
             onChange={event => chooseLabel(event.target.value)}
           >
             {snap.labels.map(item => (
               <option key={item.id} value={item.id}>{item.name}</option>
             ))}
-            {proposedLabel !== null && (
-              <option value={NEW_LABEL}>{`${proposedLabel.newName} (new)`}</option>
+            {proposedLabel !== null && matchingLabel === undefined && (
+              <option value={NEW_LABEL}>{proposedLabel.newName}</option>
             )}
           </NativeSelect>
         </div>
@@ -169,6 +176,10 @@ function StepRow({ row, index, sections, onChange, onRemove }: {
 }) {
   const { ref, handleRef, isDragging } = useSortable({ id: row.key, index })
   const shownName = stepName(row)
+  // A slot name that matches an existing slot is that slot: save reuses it, so it is shown once.
+  const matchingSection = row.kind === 'slot'
+    ? sections.find(section => sameName(section.name, row.slotName))
+    : undefined
 
   // One grid line: handle | kind badge | field | remove. The field column is the only flexible one.
   // The typed slot name, when shown, sits on a second line under the select, in the field column.
@@ -198,7 +209,7 @@ function StepRow({ row, index, sections, onChange, onRemove }: {
         <>
           <NativeSelect
             aria-label="Slot"
-            value={row.typingNew ? NEW_SLOT : row.slotName}
+            value={row.typingNew ? NEW_SLOT : (matchingSection?.name ?? row.slotName)}
             onChange={event => {
               const value = event.target.value
               if (value === NEW_SLOT) onChange({ ...row, slotName: '', typingNew: true })
@@ -208,8 +219,8 @@ function StepRow({ row, index, sections, onChange, onRemove }: {
             {sections.map(section => (
               <option key={section.id} value={section.name}>{section.name}</option>
             ))}
-            {!row.typingNew && row.slotName !== '' && !sections.some(s => s.name === row.slotName) && (
-              <option value={row.slotName}>{`${row.slotName} (new)`}</option>
+            {!row.typingNew && row.slotName !== '' && matchingSection === undefined && (
+              <option value={row.slotName}>{row.slotName}</option>
             )}
             <option value={NEW_SLOT}>New slot…</option>
           </NativeSelect>

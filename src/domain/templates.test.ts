@@ -11,7 +11,8 @@ import {
 import { at, basicDay } from './testing';
 
 const BASIC_ORDER = [
-  'Wake up, brush teeth, get ready', 'Work', 'Post work', 'Dinner', 'Post dinner', 'Bedtime',
+  'Wake up', 'Brush teeth', 'Change clothes', 'Work', 'Post work', 'Dinner', 'Post dinner', 'Bedtime',
+  'Brush teeth', 'Sleep',
 ];
 
 function orderOf(store: ReturnType<typeof basicDay>['store'], templateId: string): string[] {
@@ -22,6 +23,13 @@ function editDraftOf(store: ReturnType<typeof basicDay>['store'], templateId: Id
   const draft = draftFromTemplate(readSnapshot(store), templateId, 'edit');
   if (draft === null) throw new Error('no such template');
   return draft;
+}
+
+/** The id of the item at a position in a template. Two steps are named Brush teeth, so they are told apart by position. */
+function itemIdAt(store: ReturnType<typeof basicDay>['store'], templateId: Id, position: number): Id {
+  const item = readSnapshot(store).items.find(row => row.templateId === templateId && row.position === position);
+  if (item === undefined) throw new Error(`no item at position ${position}`);
+  return item.id;
 }
 
 test('the first template becomes the default, later ones do not take it', () => {
@@ -38,7 +46,7 @@ test('deleting the default with another template present asks for a new default 
   const snap = readSnapshot(store);
   expect(snap.templates).toHaveLength(2);
   expect(snap.defaultTemplateId).toBe(templateId);
-  expect(snap.items).toHaveLength(6);
+  expect(snap.items).toHaveLength(10);
 });
 
 test('deleting the default with a new default names the replacement and deletes the template', () => {
@@ -61,7 +69,7 @@ test('deleting the only template restores the basic day without duplicating sect
   expect(snap.templates[0]).toMatchObject({ name: 'Basic day', labelId });
   expect(snap.templates[0].id).not.toBe(templateId);
   expect(snap.defaultTemplateId).toBe(snap.templates[0].id);
-  expect(snap.items).toHaveLength(6);
+  expect(snap.items).toHaveLength(10);
   expect(snap.sections).toHaveLength(3);
   expect(snap.activities).toHaveLength(7);
   expect(snap.listings).toHaveLength(9);
@@ -129,7 +137,7 @@ test('guessing: a second template under Work day is guessed on Tuesday once it w
 });
 
 test('saving the office starter next to the basic day reuses the Work day label and the existing sections', () => {
-  const { store, labelId, templateId, sectionId } = basicDay();
+  const { store, labelId, templateId, sectionId, activityId } = basicDay();
   const draft = draftFromStarter(readSnapshot(store), 'office');
   if (draft === null) throw new Error('no such starter');
   expect(draft.label).toEqual({ id: labelId });
@@ -139,14 +147,20 @@ test('saving the office starter next to the basic day reuses the Work day label 
   const snap = readSnapshot(store);
   expect(snap.labels).toHaveLength(1);
   expect(snap.templates.find(template => template.id === office)).toMatchObject({ name: 'Office day', labelId });
-  expect(snap.sections.map(section => section.name)).toEqual(['Post work', 'Post dinner', 'Bedtime']);
-  expect(snap.sections.map(section => section.id)).toEqual([
+  expect(snap.sections.map(section => section.name)).toEqual([
+    'Post work', 'Post dinner', 'Bedtime', 'Post-shower', 'Pre-sleep',
+  ]);
+  expect(snap.sections.slice(0, 3).map(section => section.id)).toEqual([
     sectionId('Post work'), sectionId('Post dinner'), sectionId('Bedtime'),
   ]);
-  expect(snap.activities).toHaveLength(7);
-  expect(snap.listings).toHaveLength(9);
+  expect(snap.activities).toHaveLength(9);
+  const reused = snap.activities.filter(activity => ['Read', 'Stretch', 'Journal'].includes(activity.name));
+  expect(reused.map(activity => activity.id).sort())
+    .toEqual([activityId('Journal'), activityId('Read'), activityId('Stretch')].sort());
+  expect(snap.listings).toHaveLength(15);
   expect(orderOf(store, office)).toEqual([
-    'Morning routine', 'Commute', 'Work', 'Post work', 'Dinner', 'Post dinner', 'Bedtime',
+    'Wake up', 'Brush teeth', 'Change clothes', 'Commute', 'Work', 'Post work',
+    'Dinner', 'Post dinner', 'Shower', 'Post-shower', 'Pre-sleep', 'Brush teeth', 'Sleep',
   ]);
   expect(snap.defaultTemplateId).toBe(templateId);
 });
@@ -171,7 +185,8 @@ test('saving the weekend starter creates the Weekend label, a Free time section,
   expect(freeSlots).toHaveLength(2);
   expect(freeSlots[0].id).not.toBe(freeSlots[1].id);
   expect(orderOf(store, weekend)).toEqual([
-    'Morning routine', 'Free time', 'Lunch', 'Free time', 'Dinner', 'Post dinner', 'Bedtime',
+    'Wake up', 'Brush teeth', 'Change clothes', 'Free time', 'Lunch', 'Free time', 'Dinner', 'Post dinner', 'Bedtime',
+    'Brush teeth', 'Sleep',
   ]);
 });
 
@@ -190,7 +205,11 @@ test('a brand-new slot name with no suggestions creates an empty section, with t
 
 test('editing keeps the template id and the kept items\' ids, reorders, drops one step and adds one', () => {
   const { store, templateId, itemId } = basicDay();
-  const wake = itemId('Wake up, brush teeth, get ready');
+  const wake = itemId('Wake up');
+  const brush = itemIdAt(store, templateId, 1);
+  const brushNight = itemIdAt(store, templateId, 8);
+  const sleep = itemId('Sleep');
+  const change = itemId('Change clothes');
   const work = itemId('Work');
   const postWork = itemId('Post work');
   const postDinner = itemId('Post dinner');
@@ -199,7 +218,7 @@ test('editing keeps the template id and the kept items\' ids, reorders, drops on
 
   const draft = editDraftOf(store, templateId);
   const steps: DraftStep[] = [
-    ...moveStep(draft.steps, 1, 3).filter(step => !(step.kind === 'fixed' && step.name === 'Dinner')),
+    ...moveStep(draft.steps, 3, 5).filter(step => !(step.kind === 'fixed' && step.name === 'Dinner')),
     { kind: 'fixed', name: 'Commute' },
   ];
   const id = saveTemplate(store, { ...draft, name: 'Office day', steps });
@@ -208,10 +227,11 @@ test('editing keeps the template id and the kept items\' ids, reorders, drops on
   const snap = readSnapshot(store);
   expect(snap.templates[0].name).toBe('Office day');
   expect(snap.items.filter(item => item.templateId === templateId).map(item => item.id)).toEqual([
-    wake, postWork, work, postDinner, bedtime, expect.any(String),
+    wake, brush, change, postWork, work, postDinner, bedtime, brushNight, sleep, expect.any(String),
   ]);
   expect(orderOf(store, templateId)).toEqual([
-    'Wake up, brush teeth, get ready', 'Post work', 'Work', 'Post dinner', 'Bedtime', 'Commute',
+    'Wake up', 'Brush teeth', 'Change clothes', 'Post work', 'Work', 'Post dinner', 'Bedtime', 'Brush teeth', 'Sleep',
+    'Commute',
   ]);
   expect(snap.items.some(item => item.id === dinner)).toBe(false);
 });
@@ -224,7 +244,7 @@ test('a journal entry logged in a slot before an edit still maps to that slot af
   });
 
   const draft = editDraftOf(store, templateId);
-  saveTemplate(store, { ...draft, name: 'Office day', steps: moveStep(draft.steps, 2, 0) });
+  saveTemplate(store, { ...draft, name: 'Office day', steps: moveStep(draft.steps, 4, 0) });
 
   const snap = readSnapshot(store);
   expect(snap.journal[0].itemId).toBe(itemId('Post work'));

@@ -12,12 +12,16 @@ const SECTIONS: { name: string; activities: string[] }[] = [
 ];
 
 const ITEMS: ({ kind: 'fixed'; name: string } | { kind: 'slot'; section: string })[] = [
-  { kind: 'fixed', name: 'Wake up, brush teeth, get ready' },
+  { kind: 'fixed', name: 'Wake up' },
+  { kind: 'fixed', name: 'Brush teeth' },
+  { kind: 'fixed', name: 'Change clothes' },
   { kind: 'fixed', name: 'Work' },
   { kind: 'slot', section: 'Post work' },
   { kind: 'fixed', name: 'Dinner' },
   { kind: 'slot', section: 'Post dinner' },
   { kind: 'slot', section: 'Bedtime' },
+  { kind: 'fixed', name: 'Brush teeth' },
+  { kind: 'fixed', name: 'Sleep' },
 ];
 
 /**

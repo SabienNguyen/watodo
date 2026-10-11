@@ -69,7 +69,9 @@ test('deleting a section removes its slots from every template, and the day no l
   const snap = readSnapshot(store);
   expect(snap.items.some(item => item.name === 'Bedtime')).toBe(false);
   expect(snap.items.filter(item => item.templateId === templateId).map(item => item.name))
-    .toEqual(['Wake up, brush teeth, get ready', 'Work', 'Post work', 'Dinner', 'Post dinner']);
+    .toEqual([
+      'Wake up', 'Brush teeth', 'Change clothes', 'Work', 'Post work', 'Dinner', 'Post dinner', 'Brush teeth', 'Sleep',
+    ]);
   expect(snap.items.filter(item => item.kind === 'slot').map(item => item.name)).toEqual(['Post work', 'Post dinner']);
   expect(nowView(snap, at(21, 0)).slots.map(slot => slot.item.name)).toEqual(['Post work', 'Post dinner']);
   expect(snap.journal).toHaveLength(1);

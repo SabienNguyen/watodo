@@ -276,7 +276,7 @@ describe('Slots', () => {
   test('renaming the slot changes the heading, and after going back the row', () => {
     const { store } = renderEdit()
     tapRow('Post work')
-    const nameField = screen.getByRole('textbox', { name: 'Section name' })
+    const nameField = screen.getByRole('textbox', { name: 'Slot name' })
 
     fireEvent.change(nameField, { target: { value: 'Evening' } })
     fireEvent.blur(nameField)
@@ -508,7 +508,7 @@ describe('Templates', () => {
 
     expect(screen.getByRole('heading', { name: 'Edit template' })).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Basic day')
-    expect(screen.getAllByRole('textbox', { name: 'Step name' })).toHaveLength(3)
+    expect(screen.getAllByRole('textbox', { name: 'Step name' })).toHaveLength(7)
     expect(screen.getAllByRole('combobox', { name: 'Slot' })).toHaveLength(3)
     expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument()
@@ -577,7 +577,7 @@ describe('Templates', () => {
     const snap = readSnapshot(store)
     expect(snap.templates.map(t => t.name)).toEqual(['Basic day', 'Basic day copy'])
     const copy = snap.templates.find(t => t.name === 'Basic day copy')
-    expect(snap.items.filter(item => item.templateId === copy?.id)).toHaveLength(6)
+    expect(snap.items.filter(item => item.templateId === copy?.id)).toHaveLength(10)
     expect(screen.getByRole('button', { name: 'Basic day' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Basic day copy' })).toBeInTheDocument()
   })
@@ -611,7 +611,8 @@ describe('Templates', () => {
 
     const snap = readSnapshot(store)
     expect(snap.templates.map(t => t.name)).toEqual(['Basic day', 'Office day'])
-    expect(snap.sections).toHaveLength(sectionsBefore)
+    // Post work and Post dinner are reused; Post-shower and Pre-sleep are new.
+    expect(snap.sections).toHaveLength(sectionsBefore + 2)
     expect(screen.getByRole('button', { name: 'Office day' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'New template' })).toBeNull()
   })
