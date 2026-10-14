@@ -706,3 +706,148 @@ Existing functions are unchanged.
 
 ### Task 26: the Activities tab
 Implement the contracts above with tests, add the `Activities` tab and the activity editing view, and simplify the slot editing view.
+
+---
+
+# Change 13: resting, what is left in a slot, adding from Now, kept names, no duplicates, full day of logs, Progress cap
+
+See "Resting, and what is left in a slot", "Names and deleting", "Full day" and "Progress" in `docs/spec.md`.
+
+## Contracts
+
+### `src/domain/rules/types.ts`
+```ts
+export interface Activity { id: Id; name: string; committed: boolean; restDays?: number } // restDays: whole days >= 1; absent = never rests
+export interface Snapshot {
+  // ...unchanged fields; `activities`, `sections` and `templates` hold live rows only
+  removed: { activities: Activity[]; sections: Section[]; templates: Template[] }; // deleted rows, kept for their names
+}
+```
+Every place that builds a `Snapshot` literal (tests, fixtures) gains `removed: { activities: [], sections: [], templates: [] }`.
+
+### `src/domain/rules/dayRollover.ts` (addition)
+```ts
+export function daysBetween(from: DayKey, to: DayKey): number; // calendar days from `from` to `to`; negative when `to` is earlier. Safe across DST.
+```
+
+### `src/domain/rules/names.ts` (new, re-exported from `rules/index.ts`)
+```ts
+/** The form two names are compared in. Equal keys mean the same name. */
+export function nameKey(name: string): string;
+// lower case; '-', '_' and '/' become spaces; every other character that is not a letter, digit or space is
+// dropped (Unicode-aware); runs of spaces collapse; trimmed; then each word longer than 3 characters that ends
+// in 's' but not 'ss' loses that final 's'.  'Gyms' -> 'gym', 'Post-work' -> 'post work', 'Glass' -> 'glass'.
+
+/** Rows whose name is the same as or close to `name`, best first. Blank `name` -> []. */
+export function closeNames<T extends { name: string }>(name: string, rows: T[]): T[];
+// With a = nameKey(name), b = nameKey(row.name): a row is included when a === b, or
+//  - Levenshtein(a, b) <= 1 when the shorter key has 4 to 6 characters, <= 2 when it has 7 or more
+//    (keys of 3 characters or fewer are never close by distance), or
+//  - the shorter key has 4 or more characters and the longer one starts with it ('read' and 'reading'), or
+//  - the two keys have different word counts and every word of the one with fewer words is a word of the other,
+//    and that shorter one has at least one word of 3 or more characters ('gym' is in 'gym session').
+// Order: equal keys first, then by Levenshtein distance ascending, then by name (localeCompare, base sensitivity).
+
+/** Names of live or deleted rows. '(removed)' only for rows that no longer exist at all. */
+export function activityName(snap: Snapshot, id: Id): string;
+export function sectionName(snap: Snapshot, id: Id): string;
+export function templateName(snap: Snapshot, id: Id): string;
+```
+
+### `src/domain/rules/currentSlot.ts` (changes)
+```ts
+export function slotOf(slots: TemplateItem[], entry: JournalEntry): TemplateItem | undefined; // now exported; unchanged rule
+/** Today's entries by the slot item they belong to (via slotOf), each list oldest first. Entries that map to no slot are left out. */
+export function entriesBySlot(items: TemplateItem[], todaysEntries: JournalEntry[]): Map<Id, JournalEntry[]>;
+```
+
+### `src/domain/rules/views.ts` (changes)
+```ts
+export interface NowView {
+  // ...unchanged fields
+  activities: { activity: Activity; lastDone: JournalEntry | null }[]; // see the filter below
+  emptied: boolean;    // current slot is open (not spent), its section lists at least one activity, and `activities` is empty
+  nextSlot: { item: TemplateItem; displayName: string } | null; // first unspent slot after the current one in template order; null when none or no position
+}
+export interface FullDayView {
+  template: Template | null;
+  items: {
+    item: TemplateItem; displayName: string; current: boolean;
+    activities: Activity[];                                        // listed activities; empty for fixed steps
+    logged: { entry: JournalEntry; activityName: string }[];       // today's entries in this slot occurrence (entriesBySlot), oldest first; empty for fixed steps
+  }[];
+}
+```
+`nowView` activities of an open current slot: `sectionActivities` minus
+- an activity with an entry in `entriesBySlot(items, todaysEntries).get(position.item.id)` (logged in this slot occurrence today), and
+- a resting activity: `restDays` set, `lastDone` not null, and `daysBetween(dayKeyOf(lastDone.loggedAt), day) < restDays`.
+
+`spentBy.activityName` uses `activityName`. `entrySlotName` falls back to `sectionName` (so a deleted slot keeps its name). `progress` is unchanged (it already counts deleted activities' and slots' entries).
+
+### `src/domain/schema.ts` (changes)
+- Rows of `activities`, `sections` and `templates` can carry `deleted: true`. Deleting marks the row; the row and its name stay.
+- `isLive(store, tableId, id)`: the row exists and is not marked deleted. `liveRowIds(store, tableId)`.
+- `findByKey(store, tableId, name): { id: Id; deleted: boolean } | undefined`: a row whose `nameKey` equals `nameKey(name)`, preferring a live one. Labels keep `findIdByName` (case-insensitive, unchanged).
+- `ensureSection` / `ensureActivity`: a live match by key is returned; else a deleted match is brought back (its `deleted` cell removed; for an activity also its `committed` and `restDays` cells) and returned; else a new row.
+- `templateExists` means live. `deleteTemplateRows` deletes the template's items and marks the template deleted.
+
+### `src/domain/store.ts`
+`readSnapshot` puts rows marked deleted into `removed.*` (same readers), live rows into the usual arrays. Slot items are read against live section names only. `readActivity` reads `restDays` when it is a number >= 1.
+
+### `src/domain/menu.ts` (changes)
+```ts
+export function addSection(store, name): Id;                  // now reuses a live slot with the same key, or brings back a deleted one, else creates
+export function renameSection(store, id, name): boolean;      // false, and nothing changed, when another live slot has the same key or `id` is not live
+export function renameActivity(store, id, name): boolean;     // same rule for activities
+export function setActivityRestDays(store, id, days: number): void; // floor(days) >= 1 is stored; anything else removes the cell. Live activities only.
+export function deleteSection(store, id): void;               // removes its listings and its slot items in every template, marks it deleted
+export function deleteActivity(store, id): void;              // removes its listings, marks it deleted
+```
+`addActivityToSection`: an activity that did not exist live before the call (new, or brought back) gets `committed` from `options.committed`. `setActivityCommitted`, `setActivityInSection` act on live rows only.
+
+### `src/domain/templates.ts`, `setup.ts`, `demo.ts`
+Counts of templates and "is this label used" consider live templates only. `deleteTemplate` marks the template deleted (via `deleteTemplateRows`); when it was the last live template the basic day is restored as before. `saveTemplate` finds slots by key (bringing back a deleted one, which gets no suggested activities).
+
+### UI
+```tsx
+// src/ui/edit/fields.tsx
+export function AddField(props: {
+  label: string; placeholder: string; button: string; extra?: ReactNode; onAdd(name: string): void;
+  existing?: { name: string }[];   // when given: duplicate checks
+}): JSX.Element;
+// With `existing`: while the text is not blank, up to 3 of closeNames(text, existing) show under the field as
+// small outline buttons with the row's name; tapping one calls onAdd(row.name) and clears the field.
+// On submit: if the best match has the same nameKey, or there is no match, onAdd(text). Otherwise a dialog
+// titled "You already have {best.name}. Use it?" with buttons "Use {best.name}" (onAdd(best.name)) and
+// "Add new" (onAdd(text)); either clears the field; closing the dialog keeps the text.
+export function EditableText(props: InputProps & {
+  value: string; onCommit(text: string): void;
+  existing?: { id: Id; name: string }[]; selfId?: Id;  // when given: duplicate checks against the other rows
+}): JSX.Element;
+// With `existing`: committing a name whose nameKey equals another row's reverts the draft and shows
+// "You already have {name}." under the field (role="alert") until the next edit. A close (not equal) match
+// opens a dialog "You already have {name}. Rename anyway?" with "Rename" (commits) and "Cancel" (reverts).
+```
+- Edit: every add and rename field for activities and slots passes `existing` (live activities or live sections). The activity view gains a `Rest days` number field (min 0, blank = none) under `Committed`, committed on blur or Enter through `setActivityRestDays`.
+- Template editor: the new-slot text field shows the same suggestions (tapping one picks that slot); no dialog.
+- Now: a ghost icon button `+` (aria-label `Add activity`) under the current open slot's activities, also shown with the empty states. It toggles an `AddField` like the slot view's (label `New activity in {slot}`, placeholder `Activity name`, button `Add`, `Committed` checkbox, `existing` = live activities); adding calls `addActivityToSection` and closes it. When `view.emptied` and `view.nextSlot`, a `Next slot` button calls `goToSlot(nextSlot.item.id)`; the "No activities in this slot yet." line shows only when the section lists none.
+- Full day: a slot with `logged` entries renders one step per entry instead of the slot: the activity name, and the `committed` badge when `entry.committed`; these carry the slot's `current` highlight. Otherwise unchanged.
+- Progress: `By activity` and `By slot` each show their first 5; when longer, a `Show all` button under the list expands it and then reads `Show fewer`. Names come from `activityName` / `sectionName`.
+- Journal, Now: names come from `activityName`, `templateName`; '(removed)' lookups in `src/ui` are gone.
+
+## Tasks
+
+### Task 27: the rules
+`types.ts`, `dayRollover.ts`, `names.ts`, `currentSlot.ts`, `views.ts` as above, with tests; update Snapshot literals in existing tests.
+
+### Task 28: the domain
+`schema.ts`, `store.ts`, `menu.ts`, `templates.ts`, `setup.ts`, `demo.ts` as above, with tests.
+
+### Task 29: Edit fields
+`fields.tsx`, the Edit screen and the template editor, with tests.
+
+### Task 30: the Now screen
+The `+` add field, `Next slot`, and names, with tests.
+
+### Task 31: Journal, full day and Progress
+With tests.

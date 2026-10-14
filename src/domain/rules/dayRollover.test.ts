@@ -3,6 +3,7 @@ import {
   DAY_START_MINUTES,
   addDays,
   dayKeyOf,
+  daysBetween,
   noonOf,
   weekdayOf,
 } from './dayRollover'
@@ -62,5 +63,33 @@ describe('noonOf', () => {
     for (const day of ['2026-10-12', '2026-10-01', '2026-02-28', '2026-12-31']) {
       expect(dayKeyOf(noonOf(day))).toBe(day)
     }
+  })
+})
+
+describe('daysBetween', () => {
+  test('counts calendar days, and is 0 for the same day', () => {
+    expect(daysBetween('2026-10-01', '2026-10-31')).toBe(30)
+    expect(daysBetween('2026-10-12', '2026-10-12')).toBe(0)
+  })
+
+  test('is negative when the second day is earlier', () => {
+    expect(daysBetween('2026-10-12', '2026-10-10')).toBe(-2)
+  })
+
+  test('crosses a month end, a year end and a leap day', () => {
+    expect(daysBetween('2026-12-31', '2027-01-02')).toBe(2)
+    expect(daysBetween('2028-02-28', '2028-03-01')).toBe(2)
+  })
+
+  test('is 2 from 28 March to 30 March 2026', () => {
+    expect(daysBetween('2026-03-28', '2026-03-30')).toBe(2)
+  })
+
+  test('is 2 across the US spring clock change (8 March 2026)', () => {
+    expect(daysBetween('2026-03-07', '2026-03-09')).toBe(2)
+  })
+
+  test('is 2 across the US autumn clock change (1 November 2026)', () => {
+    expect(daysBetween('2026-10-31', '2026-11-02')).toBe(2)
   })
 })

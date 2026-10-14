@@ -109,6 +109,51 @@ test('a slot whose section does not exist, or that has no section, is skipped', 
   expect(readSnapshot(store).items.map(item => item.id)).toEqual(['kept']);
 });
 
+test('a slot whose section is deleted is skipped, as a slot with no section is', () => {
+  const store = createWatodoStore();
+  store.setRow('sections', 'bedtime', { name: 'Bedtime', position: 0, deleted: true });
+  store.setRow('items', 'deleted-slot', { templateId: 't', kind: 'slot', position: 0, sectionId: 'bedtime' });
+  store.setRow('items', 'fixed', { templateId: 't', kind: 'fixed', name: 'Sleep', position: 1 });
+
+  expect(readSnapshot(store).items.map(item => item.id)).toEqual(['fixed']);
+});
+
+test('deleted activities, sections and templates are listed as removed, sorted like the live rows', () => {
+  const store = createWatodoStore();
+  store.setRow('sections', 'live', { name: 'Live', position: 0 });
+  store.setRow('sections', 'late', { name: 'Late', position: 2, deleted: true });
+  store.setRow('sections', 'early', { name: 'Early', position: 1, deleted: true });
+  store.setRow('activities', 'kept', { name: 'Kept' });
+  store.setRow('activities', 'gone', { name: 'Gone', committed: true, deleted: true });
+  store.setRow('templates', 'now', { name: 'Now', labelId: 'l', position: 0 });
+  store.setRow('templates', 'old', { name: 'Old', labelId: 'l', position: 1, deleted: true });
+
+  const snap = readSnapshot(store);
+  expect(snap.sections.map(section => section.name)).toEqual(['Live']);
+  expect(snap.removed.sections.map(section => section.name)).toEqual(['Early', 'Late']);
+  expect(snap.activities).toEqual([{ id: 'kept', name: 'Kept', committed: false }]);
+  expect(snap.removed.activities).toEqual([{ id: 'gone', name: 'Gone', committed: true }]);
+  expect(snap.templates.map(template => template.name)).toEqual(['Now']);
+  expect(snap.removed.templates).toEqual([{ id: 'old', name: 'Old', labelId: 'l', position: 1 }]);
+});
+
+test('an activity reads its rest days when they are 1 or more, and never rests otherwise', () => {
+  const store = createWatodoStore();
+  store.setRow('activities', 'weekly', { name: 'Weekly', restDays: 7 });
+  store.setRow('activities', 'daily', { name: 'Daily', restDays: 1 });
+  store.setRow('activities', 'zero', { name: 'Zero', restDays: 0 });
+  store.setRow('activities', 'negative', { name: 'Negative', restDays: -2 });
+  store.setRow('activities', 'text', { name: 'Text', restDays: 'three' });
+  store.setRow('activities', 'plain', { name: 'Plain' });
+
+  const activities = readSnapshot(store).activities;
+  expect(activities.find(activity => activity.id === 'weekly')?.restDays).toBe(7);
+  expect(activities.find(activity => activity.id === 'daily')?.restDays).toBe(1);
+  for (const id of ['zero', 'negative', 'text', 'plain']) {
+    expect(activities.find(activity => activity.id === id), id).not.toHaveProperty('restDays');
+  }
+});
+
 test('a day row with only the retired earlyItemId reads as a day without it', () => {
   const store = createWatodoStore();
   store.setRow('days', '2026-10-12', { earlyItemId: 'some-item' });

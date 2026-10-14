@@ -2,8 +2,8 @@
 import { fireEvent, screen, within } from '@testing-library/react'
 import { describe, expect, test } from 'vitest'
 import {
-  addDays, addPastEntry, createWatodoStore, finishSetup, readSnapshot, setUpStarter,
-  type Clock, type Id, type WatodoStore,
+  addDays, addPastEntry, addSection, createWatodoStore, deleteActivity, deleteSection, finishSetup, readSnapshot,
+  setUpStarter, type Clock, type Id, type WatodoStore,
 } from '@/domain'
 import { renderWithWatodo } from '@/ui/testing'
 import { ProgressScreen } from './ProgressScreen'
@@ -124,5 +124,122 @@ describe('ProgressScreen', () => {
     renderWithWatodo(<ProgressScreen />, { store: finishedStore(), clock: MONDAY_1745 })
 
     expect(screen.getByText('Nothing logged in this range yet.')).toBeInTheDocument()
+  })
+})
+
+const ACTIVITY_NAMES = ['Gym', 'Walk', 'Read', 'Guitar', 'Call family', 'Journal', 'Stretch']
+const SLOT_NAMES = ['Post work', 'Post dinner', 'Bedtime', 'Morning', 'Lunch', 'Evening']
+
+/** Each named activity logged in Post work on Sat 10 Oct: the first 7 times, the next 6, and so on down to 1. */
+function activitiesLogged(store: WatodoStore, names: string[]): void {
+  names.forEach((name, i) => {
+    for (let n = 0; n < names.length - i; n++) {
+      addPastEntry(store, { activityId: activityId(store, name), sectionId: sectionId(store, 'Post work'), day: '2026-10-10' })
+    }
+  })
+}
+
+/** Gym logged in each named slot on Sat 10 Oct, the first 6 times, the next 5, and so on down to 1. Adds the slot if needed. */
+function slotsLogged(store: WatodoStore, names: string[]): void {
+  names.forEach((name, i) => {
+    const slot = addSection(store, name)
+    for (let n = 0; n < names.length - i; n++) {
+      addPastEntry(store, { activityId: activityId(store, 'Gym'), sectionId: slot, day: '2026-10-10' })
+    }
+  })
+}
+
+describe('caps', () => {
+  test('By activity shows five of seven, Show all reveals them, and Show fewer hides the last two again', () => {
+    const store = finishedStore()
+    activitiesLogged(store, ACTIVITY_NAMES)
+    renderWithWatodo(<ProgressScreen />, { store, clock: MONDAY_1745 })
+    const byActivity = within(screen.getByRole('region', { name: 'By activity' }))
+
+    expect(byActivity.getAllByRole('listitem')).toHaveLength(5)
+    expect(byActivity.getByText('Call family')).toBeInTheDocument()
+    expect(byActivity.queryByText('Journal')).toBeNull()
+    expect(byActivity.queryByText('Stretch')).toBeNull()
+
+    fireEvent.click(byActivity.getByRole('button', { name: 'Show all' }))
+
+    expect(byActivity.getAllByRole('listitem')).toHaveLength(7)
+    expect(byActivity.getByText('Stretch')).toBeInTheDocument()
+
+    fireEvent.click(byActivity.getByRole('button', { name: 'Show fewer' }))
+
+    expect(byActivity.getAllByRole('listitem')).toHaveLength(5)
+    expect(byActivity.queryByText('Stretch')).toBeNull()
+    expect(byActivity.getByRole('button', { name: 'Show all' })).toBeInTheDocument()
+  })
+
+  test('By slot shows five of six, and Show all and Show fewer work the same way', () => {
+    const store = finishedStore()
+    slotsLogged(store, SLOT_NAMES)
+    renderWithWatodo(<ProgressScreen />, { store, clock: MONDAY_1745 })
+    const bySlot = within(screen.getByRole('region', { name: 'By slot' }))
+
+    expect(bySlot.getAllByRole('listitem')).toHaveLength(5)
+    expect(bySlot.queryByText('Evening')).toBeNull()
+
+    fireEvent.click(bySlot.getByRole('button', { name: 'Show all' }))
+
+    expect(bySlot.getAllByRole('listitem')).toHaveLength(6)
+    expect(bySlot.getByText('Evening')).toBeInTheDocument()
+
+    fireEvent.click(bySlot.getByRole('button', { name: 'Show fewer' }))
+
+    expect(bySlot.getAllByRole('listitem')).toHaveLength(5)
+    expect(bySlot.queryByText('Evening')).toBeNull()
+  })
+
+  test('each list has its own toggle', () => {
+    const store = finishedStore()
+    activitiesLogged(store, ACTIVITY_NAMES)
+    slotsLogged(store, SLOT_NAMES)
+    renderWithWatodo(<ProgressScreen />, { store, clock: MONDAY_1745 })
+    const byActivity = within(screen.getByRole('region', { name: 'By activity' }))
+    const bySlot = within(screen.getByRole('region', { name: 'By slot' }))
+
+    fireEvent.click(bySlot.getByRole('button', { name: 'Show all' }))
+
+    expect(bySlot.getAllByRole('listitem')).toHaveLength(6)
+    expect(byActivity.getAllByRole('listitem')).toHaveLength(5)
+    expect(byActivity.getByRole('button', { name: 'Show all' })).toBeInTheDocument()
+  })
+
+  test('lists of five or fewer have no Show all button', () => {
+    const store = finishedStore()
+    activitiesLogged(store, ACTIVITY_NAMES.slice(0, 5))
+    slotsLogged(store, SLOT_NAMES.slice(0, 5))
+    renderWithWatodo(<ProgressScreen />, { store, clock: MONDAY_1745 })
+
+    expect(screen.getByRole('region', { name: 'By activity' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'By slot' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Show all' })).toBeNull()
+  })
+
+  test('a deleted activity still counts under its real name', () => {
+    const store = finishedStore()
+    activitiesLogged(store, ['Gym', 'Walk'])
+    deleteActivity(store, activityId(store, 'Gym'))
+    renderWithWatodo(<ProgressScreen />, { store, clock: MONDAY_1745 })
+
+    const rows = within(screen.getByRole('region', { name: 'By activity' })).getAllByRole('listitem')
+    expect(rows[0]).toHaveTextContent('Gym')
+    expect(rows[0]).toHaveTextContent('2 times')
+    expect(rows[1]).toHaveTextContent('Walk')
+    expect(screen.queryByText('(removed)')).toBeNull()
+  })
+
+  test('a deleted slot still counts under its real name', () => {
+    const store = lastWeekStore()
+    deleteSection(store, sectionId(store, 'Post work'))
+    renderWithWatodo(<ProgressScreen />, { store, clock: MONDAY_1745 })
+
+    const rows = within(screen.getByRole('region', { name: 'By slot' })).getAllByRole('listitem')
+    expect(rows[0]).toHaveTextContent('Post work')
+    expect(rows[0]).toHaveTextContent('2 times')
+    expect(screen.queryByText('(removed)')).toBeNull()
   })
 })

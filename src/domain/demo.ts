@@ -1,7 +1,7 @@
 // Demo mode: a month of plausible history, built from the date alone so the same day always gives the same data.
 import type { Clock } from './clock';
 import { setDayNote } from './logging';
-import { TABLE, writeJournalRow } from './schema';
+import { liveRowIds, TABLE, writeJournalRow } from './schema';
 import { finishSetup } from './setup';
 import { readSnapshot, type WatodoStore } from './store';
 import { saveTemplate } from './templates';
@@ -188,7 +188,7 @@ function seedToday(store: WatodoStore, rng: Rng, now: Date, today: DayKey, templ
  * Deterministic: the same day gives the same data.
  */
 export function seedDemoMonth(store: WatodoStore, clock: Clock): void {
-  if (store.getRowCount(TABLE.templates) > 0) return;
+  if (liveRowIds(store, TABLE.templates).length > 0) return;
 
   const now = clock();
   const today = dayKeyOf(now);

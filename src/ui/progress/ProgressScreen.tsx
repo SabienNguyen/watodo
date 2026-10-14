@@ -1,5 +1,7 @@
 import { useState } from 'react'
-import { addDays, dayKeyOf, dotStrip, progress, type DayKey, type Id, type Snapshot } from '@/domain'
+import {
+  activityName, addDays, dayKeyOf, dotStrip, progress, sectionName, type DayKey, type Id, type Snapshot,
+} from '@/domain'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useNowDate, useSnapshot } from '@/ui/hooks'
@@ -7,6 +9,7 @@ import { useNowDate, useSnapshot } from '@/ui/hooks'
 const RANGES = [7, 30, 90]
 const DEFAULT_RANGE = 30
 const DOT_STRIP_DAYS = 28
+const CAP = 5
 
 function timesText(count: number): string {
   return count === 1 ? '1 time' : `${count} times`
@@ -17,7 +20,11 @@ export function ProgressScreen() {
   const now = useNowDate()
   const today = dayKeyOf(now)
   const [range, setRange] = useState(DEFAULT_RANGE)
+  const [allActivities, setAllActivities] = useState(false)
+  const [allSlots, setAllSlots] = useState(false)
   const view = progress(snap, addDays(today, -(range - 1)), today)
+  const activityRows = allActivities ? view.byActivity : view.byActivity.slice(0, CAP)
+  const slotRows = allSlots ? view.bySection : view.bySection.slice(0, CAP)
 
   return (
     <div className="flex flex-col gap-8">
@@ -46,10 +53,13 @@ export function ProgressScreen() {
         <section aria-labelledby="by-activity-heading" className="flex flex-col gap-4">
           <h2 id="by-activity-heading" className="text-lg font-semibold">By activity</h2>
           <ul className="flex flex-col gap-5">
-            {view.byActivity.map(({ activityId, count }) => (
+            {activityRows.map(({ activityId, count }) => (
               <ActivityRow key={activityId} snap={snap} activityId={activityId} count={count} today={today} />
             ))}
           </ul>
+          {view.byActivity.length > CAP && (
+            <ShowToggle expanded={allActivities} onToggle={() => setAllActivities(expanded => !expanded)} />
+          )}
         </section>
       )}
 
@@ -57,16 +67,27 @@ export function ProgressScreen() {
         <section aria-labelledby="by-section-heading" className="flex flex-col gap-4">
           <h2 id="by-section-heading" className="text-lg font-semibold">By slot</h2>
           <ul className="flex flex-col gap-3">
-            {view.bySection.map(({ sectionId, count }) => (
+            {slotRows.map(({ sectionId, count }) => (
               <li key={sectionId} className="flex items-baseline justify-between gap-2">
-                <span className="font-medium">{nameOf(snap.sections, sectionId)}</span>
+                <span className="font-medium">{sectionName(snap, sectionId)}</span>
                 <span className="text-sm text-muted-foreground">{timesText(count)}</span>
               </li>
             ))}
           </ul>
+          {view.bySection.length > CAP && (
+            <ShowToggle expanded={allSlots} onToggle={() => setAllSlots(expanded => !expanded)} />
+          )}
         </section>
       )}
     </div>
+  )
+}
+
+function ShowToggle({ expanded, onToggle }: { expanded: boolean; onToggle(): void }) {
+  return (
+    <Button variant="ghost" size="sm" className="self-start" onClick={onToggle}>
+      {expanded ? 'Show fewer' : 'Show all'}
+    </Button>
   )
 }
 
@@ -82,7 +103,7 @@ function ActivityRow({ snap, activityId, count, today }: {
   return (
     <li className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="font-medium">{nameOf(snap.activities, activityId)}</span>
+        <span className="font-medium">{activityName(snap, activityId)}</span>
         <span className="text-sm text-muted-foreground">{timesText(count)}</span>
       </div>
       <div role="img" aria-label={`${doneDays} of the last ${DOT_STRIP_DAYS} days`} className="flex gap-1">
@@ -92,8 +113,4 @@ function ActivityRow({ snap, activityId, count, today }: {
       </div>
     </li>
   )
-}
-
-function nameOf(rows: { id: Id; name: string }[], id: Id): string {
-  return rows.find(row => row.id === id)?.name ?? '(removed)'
 }

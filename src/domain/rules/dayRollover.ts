@@ -34,6 +34,16 @@ export function addDays(day: DayKey, n: number): DayKey {
   return formatDay(shifted.getFullYear(), shifted.getMonth(), shifted.getDate())
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** Calendar days from `from` to `to`; negative when `to` is earlier. Counted in UTC, so a clock change never shifts it. */
+export function daysBetween(from: DayKey, to: DayKey): number {
+  const start = parseDay(from)
+  const end = parseDay(to)
+  const difference = Date.UTC(end.year, end.monthIndex, end.date) - Date.UTC(start.year, start.monthIndex, start.date)
+  return Math.round(difference / DAY_MS)
+}
+
 /** Local 12:00 on the calendar day: well inside the day, so dayKeyOf(noonOf(day)) is day. */
 export function noonOf(day: DayKey): Date {
   const { year, monthIndex, date } = parseDay(day)

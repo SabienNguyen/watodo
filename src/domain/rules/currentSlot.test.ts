@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'vitest'
-import { STAY_MS, itemsOf, positionAt, slotDisplayNames, slotsOf, spentSlots } from './currentSlot'
+import {
+  STAY_MS, entriesBySlot, itemsOf, positionAt, slotDisplayNames, slotOf, slotsOf, spentSlots,
+} from './currentSlot'
 import type { DayRecord, JournalEntry, Snapshot, TemplateItem } from './types'
 
 const NOW = new Date(2026, 9, 12, 18, 0)
@@ -37,6 +39,7 @@ function snapWith(items: TemplateItem[]): Snapshot {
   return {
     labels: [], templates: [], items, sections: [], activities: [],
     listings: [], journal: [], days: [], defaultTemplateId: null,
+    removed: { activities: [], sections: [], templates: [] },
   }
 }
 
@@ -342,5 +345,55 @@ describe('slotDisplayNames', () => {
       a2: 'A #2',
       a3: 'A #3',
     })
+  })
+})
+
+describe('slotOf', () => {
+  const evening = [slot('eveningA', 1, 'Evening A', 'evening'), slot('eveningB', 2, 'Evening B', 'evening')]
+
+  test('an entry belongs to the slot named by its itemId', () => {
+    expect(slotOf(evening, entry('e1', 'evening', minutesAgo(10), 'eveningB'))?.id).toBe('eveningB')
+  })
+
+  test('an entry with no itemId belongs to the first slot of its section', () => {
+    expect(slotOf(evening, entry('e1', 'evening', minutesAgo(10)))?.id).toBe('eveningA')
+  })
+
+  test('an entry whose section has no slot here belongs to no slot', () => {
+    expect(slotOf(evening, entry('e1', 'nowhere', minutesAgo(10)))).toBeUndefined()
+  })
+})
+
+describe('entriesBySlot', () => {
+  const work = fixed('work', 1, 'Work')
+  const freeA = slot('freeA', 2, 'Free time', 'freeTime')
+  const freeB = slot('freeB', 4, 'Free time', 'freeTime')
+  const items: TemplateItem[] = [work, freeA, freeB]
+  const hour = (h: number) => new Date(2026, 9, 12, h, 0)
+
+  test('groups each entry by its slot occurrence, oldest first, whatever the input order', () => {
+    const todays = [
+      entry('e1', 'freeTime', hour(15), 'freeB'),
+      entry('e2', 'freeTime', hour(9)), // no itemId: the first occurrence
+      entry('e3', 'freeTime', hour(16), 'freeB'),
+      entry('e4', 'freeTime', hour(12), 'freeA'),
+    ]
+    const bySlot = entriesBySlot(items, todays)
+    expect(Object.fromEntries(bySlot)).toEqual({
+      freeA: [todays[1], todays[3]],
+      freeB: [todays[0], todays[2]],
+    })
+  })
+
+  test('leaves out entries that map to no slot, and fixed steps', () => {
+    const todays = [
+      entry('ghost', 'nowhere', hour(10)),
+      entry('onWork', 'work', hour(11), 'work'),
+    ]
+    expect(entriesBySlot(items, todays).size).toBe(0)
+  })
+
+  test('no entries give an empty map', () => {
+    expect(entriesBySlot(items, []).size).toBe(0)
   })
 })

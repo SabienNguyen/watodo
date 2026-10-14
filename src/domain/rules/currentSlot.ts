@@ -48,9 +48,26 @@ export function slotDisplayNames(items: TemplateItem[]): Map<Id, string> {
 }
 
 /** The slot an entry was logged in: the one named by its itemId, else the first slot of its section. */
-function slotOf(slots: TemplateItem[], entry: JournalEntry): TemplateItem | undefined {
+export function slotOf(slots: TemplateItem[], entry: JournalEntry): TemplateItem | undefined {
   return slots.find(slot => slot.id === entry.itemId)
     ?? slots.find(slot => slot.sectionId === entry.sectionId)
+}
+
+/**
+ * Today's entries by the slot item they belong to (via slotOf), each list oldest first. Entries that map to no
+ * slot are left out.
+ */
+export function entriesBySlot(items: TemplateItem[], todaysEntries: JournalEntry[]): Map<Id, JournalEntry[]> {
+  const slots = slotsOf(items)
+  const bySlot = new Map<Id, JournalEntry[]>()
+  for (const entry of [...todaysEntries].sort((a, b) => a.loggedAt - b.loggedAt)) {
+    const slot = slotOf(slots, entry)
+    if (slot === undefined) continue
+    const list = bySlot.get(slot.id)
+    if (list) list.push(entry)
+    else bySlot.set(slot.id, [entry])
+  }
+  return bySlot
 }
 
 /**

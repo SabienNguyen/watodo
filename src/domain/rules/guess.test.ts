@@ -10,6 +10,7 @@ function snap(parts: Partial<Snapshot> = {}): Snapshot {
   return {
     labels: [], templates: [], items: [], sections: [], activities: [],
     listings: [], journal: [], days: [], defaultTemplateId: null,
+    removed: { activities: [], sections: [], templates: [] },
     ...parts,
   }
 }

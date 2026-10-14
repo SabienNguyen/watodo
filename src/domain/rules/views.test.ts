@@ -3,6 +3,7 @@ import {
   dotStrip, entrySlotName, fullDayView, journalByDay, journalDay, nowView, progress, sectionActivities,
   sectionsOfActivity, templatesUsingSection,
 } from './views'
+import type { NowView } from './views'
 import type {
   Activity, DayRecord, JournalEntry, Listing, Section, Snapshot, Template, TemplateDraft, TemplateItem,
 } from './types'
@@ -76,6 +77,7 @@ function fixture(parts: Partial<Snapshot> = {}): Snapshot {
     journal: [],
     days: [],
     defaultTemplateId: 'basic',
+    removed: { activities: [], sections: [], templates: [] },
     ...parts,
   }
 }
@@ -156,11 +158,8 @@ describe('nowView', () => {
 
     expect(view.day).toBe('2026-10-12')
     expect(view.position).toEqual({ item: bedtime, reason: 'stayed', spentBy: null })
-    expect(view.activities.map(a => [a.activity.name, a.lastDone?.id ?? null])).toEqual([
-      ['Journal', null],
-      ['Stretch', null],
-      ['Read', 'lateLog'],
-    ])
+    // Read was logged in Bedtime today (the 00:15 belongs to 10-12), so it is hidden there
+    expect(view.activities.map(a => a.activity.name)).toEqual(['Journal', 'Stretch'])
   })
 
   test('a slot chosen by hand today is the position', () => {
@@ -503,6 +502,7 @@ describe('templatesUsingSection', () => {
     const snap: Snapshot = {
       labels: [], templates, items, sections: [], activities: [],
       listings: [], journal: [], days: [], defaultTemplateId: null,
+      removed: { activities: [], sections: [], templates: [] },
     }
     expect(templatesUsingSection(snap, 'x').map(template => template.id)).toEqual(['a', 'c'])
     expect(templatesUsingSection(snap, 'y').map(template => template.id)).toEqual(['b'])
@@ -519,5 +519,224 @@ describe('sectionsOfActivity', () => {
   test('an activity no slot lists gives an empty array', () => {
     const snap = fixture({ activities: [...activities, { id: 'yoga', name: 'Yoga', committed: false }] })
     expect(sectionsOfActivity(snap, 'yoga')).toEqual([])
+  })
+})
+
+function activityNamed(snap: Snapshot, name: string): Activity {
+  const activity = snap.activities.find(candidate => candidate.name === name)
+  if (activity === undefined) throw new Error(`no activity ${name}`)
+  return activity
+}
+
+function namesIn(view: NowView): string[] {
+  return view.activities.map(row => row.activity.name)
+}
+
+describe('nowView: what is left in a slot', () => {
+  test('an activity logged in this slot today is hidden from it', () => {
+    const journal = [entry('gymHere', 'gym', 'postWork', at(2026, OCT, 12, 17, 45), 'postWork')]
+    const view = nowView(fixture({ journal }), at(2026, OCT, 12, 18, 0))
+
+    expect(view.position?.item.id).toBe('postWork')
+    expect(namesIn(view)).toEqual(['Walk', 'Read'])
+  })
+
+  test('an activity logged in one section still shows in another section', () => {
+    const journal = [entry('readHere', 'read', 'postWork', at(2026, OCT, 12, 17, 45), 'postWork')]
+    expect(namesIn(nowView(fixture({ journal }), at(2026, OCT, 12, 18, 0)))).toEqual(['Gym', 'Walk'])
+
+    const days: DayRecord[] = [
+      { day: '2026-10-12', templateId: 'basic', chosenItemId: 'postDinner', chosenAt: at(2026, OCT, 12, 17, 50).getTime() },
+    ]
+    expect(namesIn(nowView(fixture({ journal, days }), at(2026, OCT, 12, 18, 0)))).toEqual(['Guitar', 'Call family', 'Read'])
+  })
+
+  test('in a repeated slot, an activity logged in one occurrence still shows in the other', () => {
+    const store = weekendStore()
+    const snap = readSnapshot(store)
+    const [first, second] = freeTimes(snap)
+    const hike = activityNamed(snap, 'Hike')
+    const hikedInFirst = entry('hike1', hike.id, sectionIdNamed(snap, 'Free time'), at(2026, OCT, 12, 16, 30), first.id)
+
+    goToSlot(store, () => at(2026, OCT, 12, 17, 0), first.id)
+    const inFirst = nowView({ ...readSnapshot(store), journal: [hikedInFirst] }, at(2026, OCT, 12, 17, 5))
+    expect(inFirst.positionName).toBe('Free time #1')
+    expect(inFirst.activities.map(row => row.activity.id)).not.toContain(hike.id)
+
+    goToSlot(store, () => at(2026, OCT, 12, 17, 10), second.id)
+    const inSecond = nowView({ ...readSnapshot(store), journal: [hikedInFirst] }, at(2026, OCT, 12, 17, 15))
+    expect(inSecond.positionName).toBe('Free time #2')
+    expect(inSecond.activities.map(row => row.activity.id)).toContain(hike.id)
+  })
+
+  test('a hand-added entry with no itemId counts toward the first occurrence of its slot', () => {
+    const store = weekendStore()
+    const snap = readSnapshot(store)
+    const [, second] = freeTimes(snap)
+    const hike = activityNamed(snap, 'Hike')
+    const handAdded = entry('hand', hike.id, sectionIdNamed(snap, 'Free time'), at(2026, OCT, 12, 16, 30))
+
+    const inFirst = nowView({ ...snap, journal: [handAdded] }, at(2026, OCT, 12, 17, 0))
+    expect(inFirst.positionName).toBe('Free time #1')
+    expect(inFirst.activities.map(row => row.activity.id)).not.toContain(hike.id)
+
+    goToSlot(store, () => at(2026, OCT, 12, 16, 45), second.id)
+    const inSecond = nowView({ ...readSnapshot(store), journal: [handAdded] }, at(2026, OCT, 12, 17, 0))
+    expect(inSecond.positionName).toBe('Free time #2')
+    expect(inSecond.activities.map(row => row.activity.id)).toContain(hike.id)
+  })
+
+  test('a resting activity is hidden until its rest days have passed', () => {
+    const resting = activities.map(activity => (activity.id === 'gym' ? { ...activity, restDays: 30 } : activity))
+    const journal = [entry('gymOct1', 'gym', 'postWork', at(2026, OCT, 1, 18, 0), 'postWork')]
+
+    // 29 days after 1 October: still resting
+    const days: DayRecord[] = [
+      { day: '2026-10-30', templateId: 'basic', chosenItemId: 'postWork', chosenAt: at(2026, OCT, 30, 17, 0).getTime() },
+    ]
+    expect(namesIn(nowView(fixture({ activities: resting, journal, days }), at(2026, OCT, 30, 18, 0))))
+      .toEqual(['Walk', 'Read'])
+
+    // 30 days after 1 October: back
+    expect(namesIn(nowView(fixture({ activities: resting, journal }), at(2026, OCT, 31, 18, 0))))
+      .toEqual(['Gym', 'Walk', 'Read'])
+  })
+
+  test('a resting activity that was never logged is shown', () => {
+    const resting = activities.map(activity => (activity.id === 'gym' ? { ...activity, restDays: 30 } : activity))
+    expect(namesIn(nowView(fixture({ activities: resting }), at(2026, OCT, 12, 18, 0)))).toEqual(['Gym', 'Walk', 'Read'])
+  })
+
+  test('emptied is true when every activity of the open slot is logged in it today', () => {
+    const journal = [
+      entry('g', 'gym', 'postWork', at(2026, OCT, 12, 17, 30), 'postWork'),
+      entry('w', 'walk', 'postWork', at(2026, OCT, 12, 17, 40), 'postWork'),
+      entry('r', 'read', 'postWork', at(2026, OCT, 12, 17, 50), 'postWork'),
+    ]
+    const view = nowView(fixture({ journal }), at(2026, OCT, 12, 18, 0))
+
+    expect(view.activities).toEqual([])
+    expect(view.emptied).toBe(true)
+    expect(view.nextSlot?.displayName).toBe('Post dinner')
+  })
+
+  test('emptied is false when the section lists no activities', () => {
+    const view = nowView(fixture({ listings: listings.filter(listing => listing.sectionId !== 'postWork') }), at(2026, OCT, 12, 18, 0))
+
+    expect(view.position?.item.id).toBe('postWork')
+    expect(view.activities).toEqual([])
+    expect(view.emptied).toBe(false)
+  })
+
+  test('emptied is false while a spent slot is being viewed', () => {
+    const gymDone = { ...entry('gymDone', 'gym', 'postWork', at(2026, OCT, 12, 17, 45), 'postWork'), committed: true }
+    const days: DayRecord[] = [
+      { day: '2026-10-12', templateId: 'basic', chosenItemId: 'postWork', chosenAt: at(2026, OCT, 12, 17, 50).getTime() },
+    ]
+    const view = nowView(fixture({ journal: [gymDone], days }), at(2026, OCT, 12, 18, 0))
+
+    expect(view.position?.spentBy).toBe(gymDone)
+    expect(view.emptied).toBe(false)
+  })
+
+  test('emptied is false when every slot is spent', () => {
+    const journal = [
+      { ...entry('g', 'gym', 'postWork', at(2026, OCT, 12, 17, 0), 'postWork'), committed: true },
+      { ...entry('gu', 'guitar', 'postDinner', at(2026, OCT, 12, 19, 0), 'postDinner'), committed: true },
+      { ...entry('j', 'journal', 'bedtime', at(2026, OCT, 12, 21, 0), 'bedtime'), committed: true },
+    ]
+    expect(nowView(fixture({ journal }), at(2026, OCT, 12, 22, 0)).emptied).toBe(false)
+  })
+
+  test('nextSlot skips a spent slot and is the first unspent one after the current slot', () => {
+    const guitarDone = { ...entry('guitarDone', 'guitar', 'postDinner', at(2026, OCT, 12, 17, 20), 'postDinner'), committed: true }
+    const days: DayRecord[] = [
+      { day: '2026-10-12', templateId: 'basic', chosenItemId: 'postWork', chosenAt: at(2026, OCT, 12, 17, 50).getTime() },
+    ]
+    const view = nowView(fixture({ journal: [guitarDone], days }), at(2026, OCT, 12, 18, 0))
+
+    expect(view.position?.item.id).toBe('postWork')
+    expect(view.nextSlot).toEqual({ item: bedtime, displayName: 'Bedtime' })
+  })
+
+  test('nextSlot is null after the last slot', () => {
+    const days: DayRecord[] = [
+      { day: '2026-10-12', templateId: 'basic', chosenItemId: 'bedtime', chosenAt: at(2026, OCT, 12, 17, 50).getTime() },
+    ]
+    expect(nowView(fixture({ days }), at(2026, OCT, 12, 18, 0)).nextSlot).toBeNull()
+  })
+
+  test('nextSlot is null when every slot is spent', () => {
+    const journal = [
+      { ...entry('g', 'gym', 'postWork', at(2026, OCT, 12, 17, 0), 'postWork'), committed: true },
+      { ...entry('gu', 'guitar', 'postDinner', at(2026, OCT, 12, 19, 0), 'postDinner'), committed: true },
+      { ...entry('j', 'journal', 'bedtime', at(2026, OCT, 12, 21, 0), 'bedtime'), committed: true },
+    ]
+    expect(nowView(fixture({ journal }), at(2026, OCT, 12, 22, 0)).nextSlot).toBeNull()
+  })
+
+  test('an activity whose name was deleted is still named when it spends a slot', () => {
+    const gym = activityNamed(fixture(), 'Gym')
+    const gymDone = { ...entry('gymDone', 'gym', 'postWork', at(2026, OCT, 12, 17, 45), 'postWork'), committed: true }
+    const view = nowView(fixture({
+      activities: activities.filter(activity => activity.id !== 'gym'),
+      removed: { activities: [gym], sections: [], templates: [] },
+      journal: [gymDone],
+    }), at(2026, OCT, 12, 18, 0))
+
+    expect(view.slots[0].spentBy?.activityName).toBe('Gym')
+  })
+})
+
+describe('fullDayView: logged', () => {
+  test('a repeated slot lists its entries per occurrence, oldest first, with activity names', () => {
+    const snap = readSnapshot(weekendStore())
+    const [first, second] = freeTimes(snap)
+    const section = sectionIdNamed(snap, 'Free time')
+    const hike = activityNamed(snap, 'Hike')
+    const read = activityNamed(snap, 'Read')
+    const callFamily = activityNamed(snap, 'Call family')
+
+    const hikeFirst = entry('hikeFirst', hike.id, section, at(2026, OCT, 12, 14, 0), first.id)
+    const readSecond = entry('readSecond', read.id, section, at(2026, OCT, 12, 15, 0), second.id)
+    const callNoItem = entry('callNoItem', callFamily.id, section, at(2026, OCT, 12, 13, 0))
+    const hikeSecond = entry('hikeSecond', hike.id, section, at(2026, OCT, 12, 16, 0), second.id)
+
+    const view = fullDayView({ ...snap, journal: [hikeSecond, hikeFirst, readSecond, callNoItem] }, at(2026, OCT, 12, 18, 0))
+    const logged = (displayName: string) => view.items.find(item => item.displayName === displayName)?.logged
+
+    expect(logged('Free time #1')).toEqual([
+      { entry: callNoItem, activityName: 'Call family' },
+      { entry: hikeFirst, activityName: 'Hike' },
+    ])
+    expect(logged('Free time #2')).toEqual([
+      { entry: readSecond, activityName: 'Read' },
+      { entry: hikeSecond, activityName: 'Hike' },
+    ])
+    expect(logged('Post dinner')).toEqual([])
+    expect(logged('Dinner')).toEqual([])
+  })
+
+  test('a log of a deleted activity keeps its name', () => {
+    const journal = [entry('g', 'gym', 'postWork', at(2026, OCT, 12, 17, 0), 'postWork')]
+    const snap = fixture({
+      activities: activities.filter(activity => activity.id !== 'gym'),
+      removed: { activities: [{ id: 'gym', name: 'Gym', committed: false }], sections: [], templates: [] },
+      journal,
+    })
+    const view = fullDayView(snap, at(2026, OCT, 12, 18, 0))
+    expect(view.items.find(item => item.item.id === 'postWork')?.logged.map(row => row.activityName)).toEqual(['Gym'])
+  })
+})
+
+describe('deleted names in the Journal', () => {
+  test('an entry with no item, in a deleted section, keeps the section name', () => {
+    const postWork = sections.find(section => section.id === 'postWork')
+    if (postWork === undefined) throw new Error('no postWork section')
+    const snap = fixture({
+      sections: sections.filter(section => section.id !== 'postWork'),
+      removed: { activities: [], sections: [postWork], templates: [] },
+    })
+    expect(entrySlotName(snap, entry('e1', 'gym', 'postWork', at(2026, OCT, 12, 18, 0)))).toBe('Post work')
   })
 })

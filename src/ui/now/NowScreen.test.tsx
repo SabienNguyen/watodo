@@ -5,12 +5,14 @@ import { toast } from 'sonner'
 import { Toaster } from '@/components/ui/sonner'
 import {
   confirmDay, createWatodoStore, draftFromStarter, draftFromTemplate, finishSetup, logActivity, readSnapshot,
-  saveTemplate, setActivityCommitted, setUpStarter, type Clock, type Id, type WatodoStore,
+  removeActivityFromSection, saveTemplate, setActivityCommitted, setActivityRestDays, setUpStarter, type Clock,
+  type Id, type WatodoStore,
 } from '@/domain'
 import { renderWithWatodo } from '@/ui/testing'
 import { NowScreen } from './NowScreen'
 
-const MONDAY_1745: Clock = () => new Date(2026, 9, 12, 17, 45)
+const MONDAY_1745_DATE = new Date(2026, 9, 12, 17, 45)
+const MONDAY_1745: Clock = () => MONDAY_1745_DATE
 
 // The Toaster is mounted once in App; here it sits next to the screen so after-log bars show.
 function renderNow(options: { clock?: Clock; store?: WatodoStore } = {}) {
@@ -51,6 +53,12 @@ function basicDayId(store: WatodoStore): Id {
 
 function clockAt(hours: number, minutes: number): Clock {
   return () => new Date(2026, 9, 12, hours, minutes)
+}
+
+function sectionId(store: WatodoStore, name: string): Id {
+  const section = readSnapshot(store).sections.find(candidate => candidate.name === name)
+  if (section === undefined) throw new Error(`no slot ${name}`)
+  return section.id
 }
 
 /** Taps Gym and confirms the spend in its dialog. */
@@ -104,7 +112,7 @@ describe('NowScreen', () => {
 
     expect(readSnapshot(store).journal).toHaveLength(1)
     expect(screen.getByText('confirmed')).toBeInTheDocument()
-    expect(activityButton('Gym')).toHaveTextContent('last: today')
+    expect(screen.queryByRole('button', { name: /Gym/ })).toBeNull()
     expect(document.body.textContent).not.toMatch(/\d{1,2}:\d{2}/)
     expect(await screen.findByText('Logged Gym')).toBeInTheDocument()
   })
@@ -118,7 +126,8 @@ describe('NowScreen', () => {
 
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(readSnapshot(store).journal).toHaveLength(2)
-    expect(activityButton('Walk')).toHaveTextContent('last: today')
+    expect(screen.queryByRole('button', { name: /Walk/ })).toBeNull()
+    expect(activityButton('Read')).toHaveTextContent('last: never')
   })
 
   test('Post work stays current 30 minutes after a log, and Post dinner is current 2 hours after', () => {
@@ -420,5 +429,143 @@ describe('committed activities', () => {
     expect(slotButton('Post work, spent on Gym')).toBeInTheDocument()
     expect(slotButton('Post dinner, spent on Guitar')).toBeInTheDocument()
     expect(slotButton('Bedtime, spent on Journal')).toBeInTheDocument()
+  })
+})
+
+describe('what is left in a slot, and adding from Now', () => {
+  afterEach(() => {
+    toast.dismiss()
+    vi.useRealTimers()
+  })
+
+  test('a logged quick activity leaves its slot, and comes back when Undo is pressed on the after-log bar', async () => {
+    const { store } = renderNow({ clock: MONDAY_1745 })
+    fireEvent.click(activityButton('Gym'))
+    confirmBasicDay()
+    expect(screen.queryByRole('button', { name: /Gym/ })).toBeNull()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo' }))
+
+    expect(readSnapshot(store).journal).toHaveLength(0)
+    expect(activityButton('Gym')).toHaveTextContent('last: never')
+  })
+
+  test('a logged quick activity still shows in another slot that lists it', () => {
+    // The clock moves on, since a press counts only when it is later than the log.
+    let now = MONDAY_1745_DATE
+    renderNow({ clock: () => now })
+    fireEvent.click(activityButton('Read'))
+    confirmBasicDay()
+    expect(screen.queryByRole('button', { name: /Read/ })).toBeNull()
+
+    now = new Date(2026, 9, 12, 17, 46)
+    fireEvent.click(slotButton('Bedtime'))
+
+    expect(activityButton('Read')).toHaveTextContent('last: today')
+  })
+
+  test('when every listed activity is logged, Next slot appears and moves to Post dinner', () => {
+    // The clock moves on before the press, since a press counts only when it is later than the log.
+    let now = MONDAY_1745_DATE
+    const { store } = renderNow({ clock: () => now })
+    fireEvent.click(activityButton('Gym'))
+    confirmBasicDay()
+    fireEvent.click(activityButton('Walk'))
+    expect(screen.queryByRole('button', { name: 'Next slot' })).toBeNull()
+
+    fireEvent.click(activityButton('Read'))
+
+    expect(screen.queryByText('No activities in this slot yet.')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Add activity' })).toBeInTheDocument()
+    now = new Date(2026, 9, 12, 17, 46)
+    fireEvent.click(screen.getByRole('button', { name: 'Next slot' }))
+
+    expect(screen.getByRole('heading', { name: 'Post dinner' })).toBeInTheDocument()
+    expect(slotButton('Post dinner')).toHaveAttribute('aria-pressed', 'true')
+    expect(readSnapshot(store).journal).toHaveLength(3)
+  })
+
+  test('when the last slot is emptied there is no Next slot, and no empty line either', () => {
+    const { store } = renderNow({ clock: MONDAY_1745 })
+    fireEvent.click(slotButton('Bedtime'))
+    fireEvent.click(activityButton('Journal'))
+    confirmBasicDay()
+    fireEvent.click(activityButton('Stretch'))
+    fireEvent.click(activityButton('Read'))
+
+    expect(readSnapshot(store).journal).toHaveLength(3)
+    expect(screen.queryByRole('button', { name: 'Next slot' })).toBeNull()
+    expect(screen.queryByText('No activities in this slot yet.')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Add activity' })).toBeInTheDocument()
+  })
+
+  test('a slot that lists nothing says so, offers +, and has no Next slot', () => {
+    const store = finishedStore()
+    const postWork = sectionId(store, 'Post work')
+    for (const name of ['Gym', 'Walk', 'Read']) removeActivityFromSection(store, postWork, activityId(store, name))
+
+    renderNow({ store, clock: MONDAY_1745 })
+
+    expect(screen.getByText('No activities in this slot yet.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next slot' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Add activity' })).toBeInTheDocument()
+  })
+
+  test('+ opens a field for this slot; adding Swim with Committed ticked lists it here as committed, and logs nothing', () => {
+    const { store } = renderNow({ clock: MONDAY_1745 })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add activity' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'New activity is committed' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'New activity in Post work' }), {
+      target: { value: 'Swim' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    expect(within(activityButton('Swim')).getByText('committed')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'New activity in Post work' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Add activity' })).toHaveAttribute('aria-expanded', 'false')
+    expect(readSnapshot(store).journal).toHaveLength(0)
+  })
+
+  test('moving to another slot closes the add field', () => {
+    renderNow({ clock: MONDAY_1745 })
+    fireEvent.click(screen.getByRole('button', { name: 'Add activity' }))
+    expect(screen.getByRole('textbox', { name: 'New activity in Post work' })).toBeInTheDocument()
+
+    fireEvent.click(slotButton('Bedtime'))
+    fireEvent.click(slotButton('Post work'))
+
+    expect(screen.queryByRole('textbox', { name: 'New activity in Post work' })).toBeNull()
+  })
+
+  test('adding gyms in Bedtime lists Gym there at once, with no dialog and no new activity', () => {
+    const { store } = renderNow({ clock: MONDAY_1745 })
+    const activityCount = readSnapshot(store).activities.length
+
+    fireEvent.click(slotButton('Bedtime'))
+    fireEvent.click(screen.getByRole('button', { name: 'Add activity' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'New activity in Bedtime' }), {
+      target: { value: 'gyms' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(activityButton('Gym')).toHaveTextContent('last: never')
+    expect(readSnapshot(store).activities).toHaveLength(activityCount)
+  })
+
+  test('a resting activity is not shown: Walk, logged yesterday with 2 rest days, is hidden', () => {
+    const store = finishedStore()
+    const walk = activityId(store, 'Walk')
+    setActivityRestDays(store, walk, 2)
+    const yesterday: Clock = () => new Date(2026, 9, 11, 18, 0)
+    confirmDay(store, yesterday, basicDayId(store))
+    logActivity(store, yesterday, walk)
+    expect(readSnapshot(store).journal).toHaveLength(1)
+
+    renderNow({ store, clock: MONDAY_1745 })
+
+    expect(screen.queryByRole('button', { name: /Walk/ })).toBeNull()
+    expect(activityButton('Gym')).toHaveTextContent('last: never')
   })
 })

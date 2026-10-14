@@ -1,6 +1,9 @@
-import { addDays, dayKeyOf } from './dayRollover'
+import { addDays, dayKeyOf, daysBetween } from './dayRollover'
 import { guessTemplate, type TemplateGuess } from './guess'
-import { itemsOf, positionAt, slotDisplayNames, slotsOf, spentSlots, type Position } from './currentSlot'
+import {
+  entriesBySlot, itemsOf, positionAt, slotDisplayNames, slotsOf, spentSlots, type Position,
+} from './currentSlot'
+import { activityName, sectionName } from './names'
 import { lastDone } from './lastDone'
 import type {
   Activity, DayKey, DayRecord, Id, JournalEntry, Section, Snapshot, Template, TemplateItem,
@@ -14,12 +17,19 @@ export interface NowView {
   position: Position | null;             // null when there is no template, it has no slots, or every slot is spent
   positionName: string | null;           // display name of position.item
   dayDone: boolean;                      // the template has slots and position is null: every slot is spent
-  activities: { activity: Activity; lastDone: JournalEntry | null }[]; // of the current slot's section; empty when it is spent
+  // of the current slot's section, minus what is logged in this slot occurrence today and what is resting; empty when it is spent
+  activities: { activity: Activity; lastDone: JournalEntry | null }[];
+  emptied: boolean;                      // the current slot is open, its section lists activities, and `activities` is empty
+  nextSlot: { item: TemplateItem; displayName: string } | null; // first unspent slot after the current one; null when none or no position
 }
 
 export interface FullDayView {
   template: Template | null
-  items: { item: TemplateItem; displayName: string; current: boolean; activities: Activity[] }[]; // activities empty for fixed steps
+  items: {
+    item: TemplateItem; displayName: string; current: boolean;
+    activities: Activity[];                                  // listed activities; empty for fixed steps
+    logged: { entry: JournalEntry; activityName: string }[]; // today's entries in this slot occurrence, oldest first; empty for fixed steps
+  }[];
 }
 
 export interface JournalDay { day: DayKey; templateId: Id | null; note: string; entries: JournalEntry[] }
@@ -70,11 +80,15 @@ function dayOfEntry(entry: JournalEntry): DayKey {
   return dayKeyOf(new Date(entry.loggedAt))
 }
 
-/** The activity a spent slot was spent on, by name; '(removed)' when that activity no longer exists. */
+/** The activity a spent slot was spent on, by name (a deleted activity keeps its name). */
 function spentByOf(snap: Snapshot, entry: JournalEntry | undefined): NowView['slots'][number]['spentBy'] {
   if (entry === undefined) return null
-  const activityName = snap.activities.find(activity => activity.id === entry.activityId)?.name ?? '(removed)'
-  return { entry, activityName }
+  return { entry, activityName: activityName(snap, entry.activityId) }
+}
+
+/** A resting activity: it was last logged less than its rest days ago, as of `day`. */
+function isResting(activity: Activity, last: JournalEntry | null, day: DayKey): boolean {
+  return activity.restDays !== undefined && last !== null && daysBetween(dayOfEntry(last), day) < activity.restDays
 }
 
 export function nowView(snap: Snapshot, at: Date): NowView {
@@ -86,6 +100,7 @@ export function nowView(snap: Snapshot, at: Date): NowView {
   if (template === null) {
     return {
       day, guess, template: null, slots: [], position: null, positionName: null, dayDone: false, activities: [],
+      emptied: false, nextSlot: null,
     }
   }
 
@@ -95,23 +110,36 @@ export function nowView(snap: Snapshot, at: Date): NowView {
   const todaysEntries = snap.journal.filter(entry => dayOfEntry(entry) === day)
   const spent = spentSlots(items, todaysEntries)
   const position = positionAt(items, todaysEntries, dayRecordFor(snap, day), at)
-  const viewingSpent = position !== null && spent.has(position.item.id)
-  const sectionId = position?.item.sectionId
-  const activities = sectionId === undefined || viewingSpent
-    ? []
-    : sectionActivities(snap, sectionId).map(activity => ({
-      activity,
-      lastDone: lastDone(snap.journal, activity.id),
-    }))
+  const open = position !== null && !spent.has(position.item.id)
 
-  const slots = slotsOf(items).map(item => ({
+  const sectionId = position?.item.sectionId
+  const listed = open && sectionId !== undefined ? sectionActivities(snap, sectionId) : []
+  const loggedHere = new Set(
+    (position === null ? [] : entriesBySlot(items, todaysEntries).get(position.item.id) ?? [])
+      .map(entry => entry.activityId),
+  )
+  const activities = listed
+    .filter(activity => !loggedHere.has(activity.id))
+    .map(activity => ({ activity, lastDone: lastDone(snap.journal, activity.id) }))
+    .filter(({ activity, lastDone: last }) => !isResting(activity, last, day))
+  const emptied = open && listed.length > 0 && activities.length === 0
+
+  const orderedSlots = slotsOf(items)
+  const slots = orderedSlots.map(item => ({
     item,
     displayName: displayName(item),
     spentBy: spentByOf(snap, spent.get(item.id)),
   }))
   const positionName = position === null ? null : displayName(position.item)
   const dayDone = slots.length > 0 && position === null
-  return { day, guess, template, slots, position, positionName, dayDone, activities }
+  const after = position === null
+    ? undefined
+    : orderedSlots.slice(orderedSlots.findIndex(slot => slot.id === position.item.id) + 1)
+      .find(slot => !spent.has(slot.id))
+  const nextSlot = after === undefined ? null : { item: after, displayName: displayName(after) }
+  return {
+    day, guess, template, slots, position, positionName, dayDone, activities, emptied, nextSlot,
+  }
 }
 
 export function fullDayView(snap: Snapshot, at: Date): FullDayView {
@@ -121,6 +149,8 @@ export function fullDayView(snap: Snapshot, at: Date): FullDayView {
   const currentId = now.position?.item.id
   const items = itemsOf(snap, now.template.id)
   const names = slotDisplayNames(items)
+  const todaysEntries = snap.journal.filter(entry => dayOfEntry(entry) === now.day)
+  const loggedBySlot = entriesBySlot(items, todaysEntries)
   return {
     template: now.template,
     items: items.map(item => ({
@@ -130,20 +160,24 @@ export function fullDayView(snap: Snapshot, at: Date): FullDayView {
       activities: item.kind === 'slot' && item.sectionId !== undefined
         ? sectionActivities(snap, item.sectionId)
         : [],
+      logged: (loggedBySlot.get(item.id) ?? []).map(entry => ({
+        entry,
+        activityName: activityName(snap, entry.activityId),
+      })),
     })),
   }
 }
 
 /**
  * The slot an entry was logged in, by its display name: its item's name within the item's own template
- * when the item still exists, else its section's name, else '(removed)'.
+ * when the item still exists, else its section's name (a deleted section keeps its name), else '(removed)'.
  */
 export function entrySlotName(snap: Snapshot, entry: JournalEntry): string {
   const item = snap.items.find(candidate => candidate.id === entry.itemId)
   if (item !== undefined) {
     return slotDisplayNames(itemsOf(snap, item.templateId)).get(item.id) ?? item.name
   }
-  return snap.sections.find(section => section.id === entry.sectionId)?.name ?? '(removed)'
+  return sectionName(snap, entry.sectionId)
 }
 
 export function journalByDay(snap: Snapshot): JournalDay[] {

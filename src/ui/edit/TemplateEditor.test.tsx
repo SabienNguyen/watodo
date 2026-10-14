@@ -266,6 +266,26 @@ describe('TemplateEditor', () => {
     expect(itemsOf(store, templateId).map(item => item.sectionId)).toEqual([yoga?.id])
   })
 
+  test('a typed new slot name close to an existing slot offers it, and tapping it uses that slot with nothing asked', () => {
+    const store = finishedStore()
+    const bedtime = readSnapshot(store).sections.find(section => section.name === 'Bedtime')!.id
+    const sectionsBefore = readSnapshot(store).sections.length
+    const { onSaved } = open(blankDraft(readSnapshot(store)), store)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add slot' }))
+    choose(screen.getByRole('combobox', { name: 'Slot' }), 'New slot…')
+    fireEvent.change(screen.getByRole('textbox', { name: 'New slot name' }), { target: { value: 'Bedtime routine' } })
+    fireEvent.click(within(screen.getByRole('group', { name: 'Similar names' })).getByRole('button', { name: 'Bedtime' }))
+
+    expect(screen.queryByRole('textbox', { name: 'New slot name' })).toBeNull()
+    expect(screen.getByRole('combobox', { name: 'Slot' })).toHaveDisplayValue('Bedtime')
+    fireEvent.click(saveButton())
+
+    const templateId = onSaved.mock.calls[0][0] as Id
+    expect(itemsOf(store, templateId).map(item => item.sectionId)).toEqual([bedtime])
+    expect(readSnapshot(store).sections).toHaveLength(sectionsBefore)
+  })
+
   test('with no slots at all, Add slot gives an empty New slot name field', () => {
     const store = createWatodoStore()
     open(blankDraft(readSnapshot(store)), store)

@@ -9,7 +9,7 @@ export interface TemplateItem {
   position: number; sectionId?: Id; // sectionId only on slots. No start/end.
 }
 export interface Section { id: Id; name: string; position: number }
-export interface Activity { id: Id; name: string; committed: boolean } // committed: logging it spends the slot
+export interface Activity { id: Id; name: string; committed: boolean; restDays?: number } // committed: logging it spends the slot. restDays: whole days >= 1; absent = never rests
 export interface Listing { sectionId: Id; activityId: Id; position: number }
 export interface JournalEntry {
   id: Id; activityId: Id; sectionId: Id; loggedAt: number; // epoch ms, recorded but never shown
@@ -39,4 +39,6 @@ export interface Snapshot {
   labels: Label[]; templates: Template[]; items: TemplateItem[]; // items sorted by position
   sections: Section[]; activities: Activity[]; listings: Listing[];
   journal: JournalEntry[]; days: DayRecord[]; defaultTemplateId: Id | null;
+  // activities, sections and templates hold live rows only; removed holds deleted rows, kept for their names
+  removed: { activities: Activity[]; sections: Section[]; templates: Template[] };
 }

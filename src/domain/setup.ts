@@ -1,13 +1,13 @@
 import type { WatodoStore } from './store';
 import { addBasicDayTemplate } from './basicDay';
-import { TABLE, VALUE } from './schema';
+import { liveRowIds, TABLE, VALUE } from './schema';
 import { addLabel, setDefaultTemplate, setLabelWeekdays } from './templates';
 
 export type SetupState = 'new' | 'customising' | 'done';
 
 export function setupState(store: WatodoStore): SetupState {
   if (store.getValue(VALUE.setupFinished) === true) return 'done';
-  return store.getRowCount(TABLE.templates) > 0 ? 'customising' : 'new';
+  return liveRowIds(store, TABLE.templates).length > 0 ? 'customising' : 'new';
 }
 
 /** Creates the basic day: a "Work day" label (Mon to Fri) with the "Basic day" template as default. */

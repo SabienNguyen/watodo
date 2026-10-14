@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { CheckIcon } from 'lucide-react'
+import { CheckIcon, PlusIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import {
-  deleteEntry, editEntry, entrySlotName, goToSlot, logActivity, nowView, readSnapshot, type Activity, type Id,
-  type PendingLog,
+  activityName, addActivityToSection, deleteEntry, editEntry, entrySlotName, goToSlot, logActivity, nowView,
+  readSnapshot, type Activity, type Id, type PendingLog,
 } from '@/domain'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { lastDoneText } from '@/ui/format'
+import { AddField } from '@/ui/edit/fields'
 import { useNowDate, useSnapshot, useWatodo } from '@/ui/hooks'
 import { UndoCommitDialog } from '@/ui/UndoCommitDialog'
 import { DayPicker } from './DayPicker'
@@ -31,7 +32,7 @@ export function NowScreen() {
   const snap = useSnapshot()
   const now = useNowDate()
   const view = nowView(snap, now)
-  const { position, positionName, slots, template, dayDone } = view
+  const { position, positionName, slots, template, dayDone, nextSlot } = view
 
   // null: picker closed. An object with no pending: switch mode.
   const [picker, setPicker] = useState<{ pending?: PendingLog } | null>(null)
@@ -87,8 +88,7 @@ export function NowScreen() {
   const pickerDone = (entryId: Id | null) => {
     const pending = picker?.pending
     if (entryId === null || pending === undefined) return
-    const activityName = snap.activities.find(a => a.id === pending.activityId)?.name ?? ''
-    showAfterLog(entryId, activityName)
+    showAfterLog(entryId, activityName(snap, pending.activityId))
   }
 
   return (
@@ -155,7 +155,7 @@ export function NowScreen() {
             </>
           ) : (
             <>
-              {view.activities.length === 0 && (
+              {view.activities.length === 0 && !view.emptied && (
                 <p className="text-muted-foreground">No activities in this slot yet.</p>
               )}
               {view.activities.map(({ activity, lastDone }) => (
@@ -172,6 +172,20 @@ export function NowScreen() {
                   <span className="text-sm text-muted-foreground">{`last: ${lastDoneText(lastDone, now)}`}</span>
                 </Button>
               ))}
+              {view.emptied && nextSlot !== null && (
+                <div>
+                  <Button variant="outline" onClick={() => goToSlot(store, clock, nextSlot.item.id)}>
+                    Next slot
+                  </Button>
+                </div>
+              )}
+              {position.item.sectionId !== undefined && (
+                <AddActivity
+                  key={position.item.id}
+                  slotName={positionName ?? ''}
+                  sectionId={position.item.sectionId}
+                />
+              )}
             </>
           )}
         </section>
@@ -211,6 +225,58 @@ export function NowScreen() {
           key={noteTarget.entryId}
           target={noteTarget}
           onClose={() => setNoteTarget(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * The + button under an open slot's activities, and the field it opens. Keyed by the slot,
+ * so moving to another slot closes the field.
+ */
+function AddActivity({ slotName, sectionId }: { slotName: string; sectionId: Id }) {
+  const { store } = useWatodo()
+  const snap = useSnapshot()
+  const [open, setOpen] = useState(false)
+  // Whether the activity added next is committed. Unticked after each add.
+  const [committed, setCommitted] = useState(false)
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Add activity"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          <PlusIcon />
+        </Button>
+      </div>
+      {open && (
+        <AddField
+          label={`New activity in ${slotName}`}
+          placeholder="Activity name"
+          button="Add"
+          existing={snap.activities}
+          extra={(
+            <label className="flex items-center gap-1.5 text-sm whitespace-nowrap">
+              <input
+                type="checkbox"
+                aria-label="New activity is committed"
+                checked={committed}
+                onChange={event => setCommitted(event.target.checked)}
+              />
+              Committed
+            </label>
+          )}
+          onAdd={name => {
+            addActivityToSection(store, sectionId, name, { committed })
+            setCommitted(false)
+            setOpen(false)
+          }}
         />
       )}
     </div>

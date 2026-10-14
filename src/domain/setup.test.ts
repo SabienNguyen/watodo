@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { createWatodoStore, readSnapshot } from './store';
-import { TABLE } from './schema';
+import { deleteTemplateRows, TABLE } from './schema';
 import { finishSetup, setupState, setUpStarter } from './setup';
 
 test('a new store is new', () => {
@@ -53,4 +53,17 @@ test('setting up again does not add a second basic day', () => {
   setUpStarter(store);
   setUpStarter(store);
   expect(readSnapshot(store).templates).toHaveLength(1);
+});
+
+test('a store whose templates are all deleted is new again, and setting up adds a basic day', () => {
+  const store = createWatodoStore();
+  setUpStarter(store);
+  deleteTemplateRows(store, readSnapshot(store).templates[0].id);
+  expect(setupState(store)).toBe('new');
+
+  setUpStarter(store);
+  expect(setupState(store)).toBe('customising');
+  const snap = readSnapshot(store);
+  expect(snap.templates.map(template => template.name)).toEqual(['Basic day']);
+  expect(snap.removed.templates.map(template => template.name)).toEqual(['Basic day']);
 });

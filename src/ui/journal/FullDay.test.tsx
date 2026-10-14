@@ -2,11 +2,38 @@
 import { screen, within } from '@testing-library/react'
 import { describe, expect, test } from 'vitest'
 import {
-  confirmDay, createWatodoStore, draftFromStarter, finishSetup, readSnapshot, saveTemplate, setUpStarter,
-  type WatodoStore,
+  confirmDay, createWatodoStore, draftFromStarter, finishSetup, goToSlot, logActivity, readSnapshot, saveTemplate,
+  setActivityCommitted, setUpStarter, type Clock, type Id, type WatodoStore,
 } from '@/domain'
 import { renderWithWatodo } from '@/ui/testing'
 import { FullDay } from './FullDay'
+
+const MONDAY_1745: Clock = () => new Date(2026, 9, 12, 17, 45)
+
+function activityId(store: WatodoStore, name: string): Id {
+  const activity = readSnapshot(store).activities.find(a => a.name === name)
+  if (!activity) throw new Error(`no activity ${name}`)
+  return activity.id
+}
+
+/** The basic day confirmed for Mon 12 Oct at 17:45, so the first slot, Post work, is current. */
+function basicDayStore(): WatodoStore {
+  const store = createWatodoStore()
+  setUpStarter(store)
+  finishSetup(store)
+  confirmDay(store, MONDAY_1745, readSnapshot(store).templates[0].id)
+  return store
+}
+
+/** Basic day with Gym and Walk logged quick in Post work, then Read logged committed, which spends it. */
+function postWorkLoggedStore(): WatodoStore {
+  const store = basicDayStore()
+  logActivity(store, MONDAY_1745, activityId(store, 'Gym'))
+  logActivity(store, () => new Date(2026, 9, 12, 17, 46), activityId(store, 'Walk'))
+  setActivityCommitted(store, activityId(store, 'Read'), true)
+  logActivity(store, () => new Date(2026, 9, 12, 17, 47), activityId(store, 'Read'))
+  return store
+}
 
 /** The starter store with the Weekend starter saved (its Free time slot repeats) and confirmed for Mon 12 Oct. */
 function weekendStore(): WatodoStore {
@@ -87,6 +114,63 @@ describe('FullDay', () => {
 
     expect(screen.queryAllByRole('button')).toHaveLength(0)
     expect(screen.queryByText("Fixed steps are shown here only. They can't be tapped or logged.")).not.toBeInTheDocument()
+  })
+
+  test('a slot with entries shows one step per entry in the order logged, the committed one badged, and not the slot name', () => {
+    renderWithWatodo(<FullDay />, { store: postWorkLoggedStore(), clock: MONDAY_1745 })
+
+    const rows = screen.getAllByRole('listitem')
+    expect(rows).toHaveLength(12)
+    expect(rows[4]).toHaveTextContent('Gym')
+    expect(rows[5]).toHaveTextContent('Walk')
+    expect(rows[6]).toHaveTextContent('Read')
+    for (const row of rows.slice(4, 7)) {
+      expect(within(row).queryByText('slot')).toBeNull()
+      expect(within(row).queryByText('fixed')).toBeNull()
+    }
+    expect(within(rows[4]).queryByText('committed')).toBeNull()
+    expect(within(rows[5]).queryByText('committed')).toBeNull()
+    expect(within(rows[6]).getByText('committed')).toBeInTheDocument()
+    expect(screen.queryByText('Post work')).toBeNull()
+  })
+
+  test('a slot with nothing logged still shows its name and activities', () => {
+    renderWithWatodo(<FullDay />, { store: postWorkLoggedStore(), clock: MONDAY_1745 })
+
+    const postDinner = screen.getByText('Post dinner').closest('li') as HTMLElement
+    expect(postDinner).toHaveTextContent('Guitar, Call family, Read')
+    expect(within(postDinner).getByText('slot')).toBeInTheDocument()
+  })
+
+  test('logged steps of the current slot carry the current highlight', () => {
+    const store = basicDayStore()
+    logActivity(store, MONDAY_1745, activityId(store, 'Gym'))
+    logActivity(store, () => new Date(2026, 9, 12, 17, 46), activityId(store, 'Walk'))
+    renderWithWatodo(<FullDay />, { store, clock: () => new Date(2026, 9, 12, 17, 47) })
+
+    const rows = screen.getAllByRole('listitem')
+    expect(rows[4]).toHaveAttribute('aria-current', 'true')
+    expect(rows[5]).toHaveAttribute('aria-current', 'true')
+    expect(rows[6]).toHaveTextContent('Dinner')
+    expect(rows[6]).not.toHaveAttribute('aria-current')
+  })
+
+  test('a repeated slot shows its logs under the occurrence they were logged in', () => {
+    const store = weekendStore()
+    const [firstFreeTime, secondFreeTime] = readSnapshot(store).items.filter(item => item.name === 'Free time')
+    goToSlot(store, () => new Date(2026, 9, 12, 9, 0), firstFreeTime.id)
+    logActivity(store, () => new Date(2026, 9, 12, 9, 1), activityId(store, 'Hike'))
+    goToSlot(store, () => new Date(2026, 9, 12, 9, 2), secondFreeTime.id)
+    logActivity(store, () => new Date(2026, 9, 12, 9, 3), activityId(store, 'Call family'))
+    renderWithWatodo(<FullDay />, { store, clock: () => new Date(2026, 9, 12, 9, 4) })
+
+    const rows = screen.getAllByRole('listitem')
+    expect(rows).toHaveLength(11)
+    expect(rows[3]).toHaveTextContent('Hike')
+    expect(rows[3]).not.toHaveAttribute('aria-current')
+    expect(rows[5]).toHaveTextContent('Call family')
+    expect(rows[5]).toHaveAttribute('aria-current', 'true')
+    expect(screen.queryByText(/Free time/)).toBeNull()
   })
 
   test('with no template renders nothing', () => {

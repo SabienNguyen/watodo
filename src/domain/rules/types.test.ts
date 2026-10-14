@@ -5,10 +5,11 @@ test('a Snapshot holds exactly the collections the rules read', () => {
   const snap: Snapshot = {
     labels: [], templates: [], items: [], sections: [], activities: [],
     listings: [], journal: [], days: [], defaultTemplateId: null,
+    removed: { activities: [], sections: [], templates: [] },
   }
   expect(Object.keys(snap).sort()).toEqual([
     'activities', 'days', 'defaultTemplateId', 'items', 'journal',
-    'labels', 'listings', 'sections', 'templates',
+    'labels', 'listings', 'removed', 'sections', 'templates',
   ])
 })
 

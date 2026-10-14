@@ -2,8 +2,9 @@
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import {
-  addPastEntry, confirmDay, createWatodoStore, dayKeyOf, draftFromStarter, finishSetup, goToSlot, logActivity,
-  readSnapshot, saveTemplate, setActivityCommitted, setUpStarter, type Clock, type Id, type WatodoStore,
+  addPastEntry, confirmDay, createWatodoStore, dayKeyOf, deleteActivity, deleteTemplate, draftFromStarter,
+  finishSetup, goToSlot, logActivity, readSnapshot, saveTemplate, setActivityCommitted, setUpStarter, type Clock,
+  type Id, type WatodoStore,
 } from '@/domain'
 import { renderWithWatodo } from '@/ui/testing'
 import { JournalScreen } from './JournalScreen'
@@ -567,5 +568,35 @@ describe('committed entries', () => {
 
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(readSnapshot(store).journal.map(e => e.activityId)).not.toContain(activityId(store, 'Walk'))
+  })
+})
+
+describe('deleted names', () => {
+  test("an entry of a deleted activity still shows the activity's name", () => {
+    const store = seededStore()
+    deleteActivity(store, activityId(store, 'Gym'))
+    renderWithWatodo(<JournalScreen />, { store, clock: MONDAY_1745 })
+
+    expect(rowOf('Gym')).toHaveTextContent('Post work')
+    expect(screen.queryByText('(removed)')).toBeNull()
+  })
+
+  test("a day whose template was deleted still shows the template's name", () => {
+    const store = finishedStore()
+    const draft = draftFromStarter(readSnapshot(store), 'weekend')
+    if (draft === null) throw new Error('no weekend starter')
+    saveTemplate(store, draft)
+    const weekend = readSnapshot(store).templates.find(template => template.name === 'Weekend')
+    if (weekend === undefined) throw new Error('no weekend template')
+    confirmDay(store, () => new Date(2026, 9, 10, 12, 0), weekend.id)
+    expect(deleteTemplate(store, weekend.id)).toBe('deleted')
+    renderWithWatodo(<JournalScreen />, { store, clock: MONDAY_1745 })
+
+    previousDay()
+    previousDay()
+
+    expect(screen.getByRole('heading', { name: 'Sat 10 Oct' })).toBeInTheDocument()
+    expect(screen.getByText('Weekend')).toBeInTheDocument()
+    expect(screen.queryByText('(removed)')).toBeNull()
   })
 })

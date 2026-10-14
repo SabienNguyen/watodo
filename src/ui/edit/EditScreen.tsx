@@ -4,15 +4,15 @@ import { toast } from 'sonner'
 import {
   addActivity, addLabel, addSection, addActivityToSection, deleteActivity, deleteLabel, deleteSection, deleteTemplate,
   draftFromTemplate, removeActivityFromSection, renameActivity, renameLabel, renameSection, sectionsOfActivity,
-  setActivityCommitted, setActivityInSection, setDefaultTemplate, setLabelWeekdays, templatesUsingSection,
-  type Activity, type Id, type Label, type Section, type Snapshot, type TemplateDraft,
+  setActivityCommitted, setActivityInSection, setActivityRestDays, setDefaultTemplate, setLabelWeekdays,
+  templatesUsingSection, type Activity, type Id, type Label, type Section, type Snapshot, type TemplateDraft,
 } from '@/domain'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { useSnapshot, useWatodo } from '@/ui/hooks'
-import { AddField, EditableText } from './fields'
+import { AddField, EditableText, RestDaysField } from './fields'
 import { NameRow } from './NameRow'
 import { StarterPicker } from './StarterPicker'
 import { TemplateEditorForm } from './TemplateEditor'
@@ -187,6 +187,7 @@ function SlotsPart({ onOpen }: { onOpen(id: Id): void }) {
         label="Slot name"
         placeholder="Slot name"
         button="Add slot"
+        existing={snap.sections}
         onAdd={name => onOpen(addSection(store, name))}
       />
     </div>
@@ -215,6 +216,8 @@ function SlotView({ part, section, onBack }: { part: Part; section: Section; onB
         <EditableText
           aria-label="Slot name"
           value={section.name}
+          existing={snap.sections}
+          selfId={section.id}
           onCommit={name => renameSection(store, section.id, name)}
         />
         <p className="text-sm text-muted-foreground">
@@ -243,6 +246,7 @@ function SlotView({ part, section, onBack }: { part: Part; section: Section; onB
         label={`New activity in ${section.name}`}
         placeholder="Activity name"
         button="Add"
+        existing={snap.activities}
         extra={(
           <label className="flex items-center gap-1.5 text-sm whitespace-nowrap">
             <input
@@ -338,6 +342,7 @@ function ActivitiesPart({ onOpen }: { onOpen(id: Id): void }) {
         label="Activity name"
         placeholder="Activity name"
         button="Add activity"
+        existing={snap.activities}
         onAdd={name => {
           const id = addActivity(store, name)
           if (id !== '') onOpen(id)
@@ -361,6 +366,8 @@ function ActivityView({ part, activity, onBack }: { part: Part; activity: Activi
       <EditableText
         aria-label="Activity name"
         value={activity.name}
+        existing={snap.activities}
+        selfId={activity.id}
         onCommit={name => renameActivity(store, activity.id, name)}
       />
 
@@ -373,6 +380,11 @@ function ActivityView({ part, activity, onBack }: { part: Part; activity: Activi
         />
         Committed
       </label>
+
+      <RestDaysField
+        value={activity.restDays}
+        onCommit={days => setActivityRestDays(store, activity.id, days)}
+      />
 
       <div role="group" aria-labelledby={slotsHeading} className="flex flex-col gap-2">
         <h3 id={slotsHeading} className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Slots</h3>

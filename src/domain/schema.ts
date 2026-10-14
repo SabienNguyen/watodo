@@ -1,6 +1,6 @@
 // Private to src/domain: the only place that knows table, value and cell names.
 import type { MergeableStore } from 'tinybase';
-import type { Id } from './rules';
+import { nameKey, type Id } from './rules';
 
 export const TABLE = {
   labels: 'labels',
@@ -57,19 +57,57 @@ export function findIdByName(store: MergeableStore, tableId: string, name: strin
   });
 }
 
-/** The section with this name (case-insensitive), or a new one at the end. */
+/** True when the row exists and is not marked deleted. */
+export function isLive(store: MergeableStore, tableId: string, id: Id): boolean {
+  return store.hasRow(tableId, id) && store.getCell(tableId, id, 'deleted') !== true;
+}
+
+export function liveRowIds(store: MergeableStore, tableId: string): Id[] {
+  return store.getRowIds(tableId).filter(id => store.getCell(tableId, id, 'deleted') !== true);
+}
+
+/**
+ * A row whose name has the same key as `name` (see nameKey), preferring a live row over a deleted one.
+ * `deleted` tells the caller whether it has to be brought back.
+ */
+export function findByKey(store: MergeableStore, tableId: string, name: string): { id: Id; deleted: boolean } | undefined {
+  const key = nameKey(name);
+  let deletedMatch: Id | undefined;
+  for (const id of store.getRowIds(tableId)) {
+    const existing = store.getCell(tableId, id, 'name');
+    if (typeof existing !== 'string' || nameKey(existing) !== key) continue;
+    if (store.getCell(tableId, id, 'deleted') !== true) return { id, deleted: false };
+    deletedMatch ??= id;
+  }
+  return deletedMatch === undefined ? undefined : { id: deletedMatch, deleted: true };
+}
+
+/** The live section with this name's key, else a deleted one brought back, else a new one at the end. */
 export function ensureSection(store: MergeableStore, name: string): Id {
-  const existing = findIdByName(store, TABLE.sections, name);
-  if (existing !== undefined) return existing;
+  const found = findByKey(store, TABLE.sections, name);
+  if (found !== undefined) {
+    if (found.deleted) store.delCell(TABLE.sections, found.id, 'deleted');
+    return found.id;
+  }
   const id = newId();
   store.setRow(TABLE.sections, id, { name: name.trim(), position: nextPosition(store, TABLE.sections) });
   return id;
 }
 
-/** The activity with this name (case-insensitive), or a new one. */
+/**
+ * The live activity with this name's key, else a deleted one brought back (quick, with no rest days),
+ * else a new quick one.
+ */
 export function ensureActivity(store: MergeableStore, name: string): Id {
-  const existing = findIdByName(store, TABLE.activities, name);
-  if (existing !== undefined) return existing;
+  const found = findByKey(store, TABLE.activities, name);
+  if (found !== undefined) {
+    if (found.deleted) {
+      store.delCell(TABLE.activities, found.id, 'deleted');
+      store.delCell(TABLE.activities, found.id, 'committed');
+      store.delCell(TABLE.activities, found.id, 'restDays');
+    }
+    return found.id;
+  }
   const id = newId();
   store.setRow(TABLE.activities, id, { name: name.trim() });
   return id;
@@ -82,7 +120,7 @@ export function ensureListing(store: MergeableStore, sectionId: Id, activityId: 
 }
 
 export function templateExists(store: MergeableStore, templateId: Id): boolean {
-  return store.hasRow(TABLE.templates, templateId);
+  return isLive(store, TABLE.templates, templateId);
 }
 
 export function defaultTemplateIsValid(store: MergeableStore): boolean {
@@ -96,12 +134,15 @@ export function itemIdsOf(store: MergeableStore, templateId: Id): Id[] {
   );
 }
 
-/** Removes a template and its items. Does not touch the default or any day records. */
+/**
+ * Removes the template's items and marks the template deleted. Its row and name stay, for the day
+ * records and the Journal. Does not touch the default.
+ */
 export function deleteTemplateRows(store: MergeableStore, templateId: Id): void {
   for (const itemId of itemIdsOf(store, templateId)) {
     store.delRow(TABLE.items, itemId);
   }
-  store.delRow(TABLE.templates, templateId);
+  if (store.hasRow(TABLE.templates, templateId)) store.setCell(TABLE.templates, templateId, 'deleted', true);
 }
 
 export interface JournalFields {

@@ -2,8 +2,8 @@ import { SUGGESTED_ACTIVITIES, type Id, type TemplateDraft } from './rules';
 import type { WatodoStore } from './store';
 import { addBasicDayTemplate } from './basicDay';
 import {
-  defaultTemplateIsValid, deleteTemplateRows, encodeWeekdays, ensureActivity, ensureListing, findIdByName,
-  itemIdsOf, newId, nextPosition, sameName, templateExists, TABLE, VALUE,
+  defaultTemplateIsValid, deleteTemplateRows, encodeWeekdays, ensureActivity, ensureListing, ensureSection,
+  findByKey, findIdByName, itemIdsOf, liveRowIds, newId, nextPosition, sameName, templateExists, TABLE, VALUE,
 } from './schema';
 
 export function addLabel(store: WatodoStore, name: string): Id {
@@ -24,9 +24,9 @@ export function setLabelWeekdays(store: WatodoStore, id: Id, weekdays: number[])
   }
 }
 
-/** False, and nothing deleted, while a template uses the label. */
+/** False, and nothing deleted, while a live template uses the label. */
 export function deleteLabel(store: WatodoStore, id: Id): boolean {
-  const used = store.getRowIds(TABLE.templates).some(
+  const used = liveRowIds(store, TABLE.templates).some(
     templateId => store.getCell(TABLE.templates, templateId, 'labelId') === id,
   );
   if (used) return false;
@@ -41,13 +41,13 @@ export function setDefaultTemplate(store: WatodoStore, id: Id): void {
 export type DeleteTemplateResult = 'deleted' | 'needs-new-default' | 'restored-basic';
 
 /**
- * Deleting the only template restores the basic day under the same label, as the default.
+ * Deleting the only live template restores the basic day under the same label, as the default.
  * Deleting the default while others exist needs `newDefaultId`; without a valid one nothing changes.
  */
 export function deleteTemplate(store: WatodoStore, id: Id, newDefaultId?: Id): DeleteTemplateResult {
   if (!templateExists(store, id)) return 'deleted';
 
-  if (store.getRowCount(TABLE.templates) === 1) {
+  if (liveRowIds(store, TABLE.templates).length === 1) {
     return store.transaction(() => {
       const labelId = store.getCell(TABLE.templates, id, 'labelId');
       let restoreLabelId: Id;
@@ -91,14 +91,16 @@ function labelIdFor(store: WatodoStore, label: TemplateDraft['label']): Id {
   return id;
 }
 
-/** The section with this name (case-insensitive). A new one gets its suggested activities, if it has any. */
+/**
+ * The section with this name's key: a live one, or a deleted one brought back. Only a new section gets
+ * its suggested activities, if it has any.
+ */
 function sectionIdFor(store: WatodoStore, slotName: string): Id {
   const name = slotName.trim();
-  const existing = findIdByName(store, TABLE.sections, name);
-  if (existing !== undefined) return existing;
+  const isNew = findByKey(store, TABLE.sections, name) === undefined;
+  const id = ensureSection(store, name);
+  if (!isNew) return id;
 
-  const id = newId();
-  store.setRow(TABLE.sections, id, { name, position: nextPosition(store, TABLE.sections) });
   const suggestedFor = Object.keys(SUGGESTED_ACTIVITIES).find(key => sameName(key, name));
   for (const activity of suggestedFor === undefined ? [] : SUGGESTED_ACTIVITIES[suggestedFor]) {
     ensureListing(store, id, ensureActivity(store, activity));

@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
 import {
-  addDays, addPastEntry, dayKeyOf, deleteEntry, editEntry, entrySlotName, journalDay, nowView, sectionActivities,
-  setDayNote, type DayKey, type Id, type JournalEntry,
+  activityName, addDays, addPastEntry, dayKeyOf, deleteEntry, editEntry, entrySlotName, journalDay, nowView,
+  sectionActivities, setDayNote, templateName, type DayKey, type Id, type JournalEntry,
 } from '@/domain'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -28,9 +28,7 @@ export function JournalScreen() {
 
   const isToday = viewed === today
   const day = journalDay(snap, viewed)
-  const templateName = day.templateId === null
-    ? 'Template not chosen'
-    : (snap.templates.find(template => template.id === day.templateId)?.name ?? '(removed)')
+  const dayTemplate = day.templateId === null ? 'Template not chosen' : templateName(snap, day.templateId)
   const hasFullDay = isToday && nowView(snap, now).guess.confirmed
 
   return (
@@ -68,7 +66,7 @@ export function JournalScreen() {
       </div>
 
       <div className="flex flex-col gap-4">
-        <p className="text-sm text-muted-foreground">{templateName}</p>
+        <p className="text-sm text-muted-foreground">{dayTemplate}</p>
 
         {hasFullDay && <FullDayToggle />}
 
@@ -124,7 +122,7 @@ function EntryRow({ entry, onEdit }: { entry: JournalEntry; onEdit(): void }) {
   const snap = useSnapshot()
   // Whether the Undo dialog is open for this committed entry.
   const [undoing, setUndoing] = useState(false)
-  const activityName = snap.activities.find(activity => activity.id === entry.activityId)?.name ?? '(removed)'
+  const entryActivity = activityName(snap, entry.activityId)
   const slotName = entrySlotName(snap, entry)
   const committed = entry.committed === true
 
@@ -138,7 +136,7 @@ function EntryRow({ entry, onEdit }: { entry: JournalEntry; onEdit(): void }) {
     <li className="flex flex-col gap-1 py-3">
       <div className="flex items-center justify-between gap-2">
         <p className="flex flex-wrap items-baseline gap-x-2 font-medium">
-          <span>{activityName}</span>
+          <span>{entryActivity}</span>
           <span className="text-sm font-normal text-muted-foreground">{slotName}</span>
           {committed && <Badge variant="secondary">committed</Badge>}
         </p>
@@ -153,7 +151,7 @@ function EntryRow({ entry, onEdit }: { entry: JournalEntry; onEdit(): void }) {
       )}
       {undoing && (
         <UndoCommitDialog
-          activityName={activityName}
+          activityName={entryActivity}
           slotName={slotName}
           onUndo={() => deleteEntry(store, entry.id)}
           onCancel={() => setUndoing(false)}

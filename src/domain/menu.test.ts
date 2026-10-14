@@ -1,10 +1,10 @@
 import { expect, test } from 'vitest';
 import {
   addActivity, addActivityToSection, addSection, deleteActivity, deleteSection, removeActivityFromSection,
-  renameActivity, renameSection, setActivityCommitted, setActivityInSection,
+  renameActivity, renameSection, setActivityCommitted, setActivityInSection, setActivityRestDays,
 } from './menu';
 import { addPastEntry } from './logging';
-import { nowView, sectionActivities } from './rules';
+import { activityName, nowView, sectionActivities, sectionName } from './rules';
 import { readSnapshot } from './store';
 import { saveTemplate } from './templates';
 import { at, basicDay } from './testing';
@@ -96,8 +96,177 @@ test('deleting a section removes its listings and keeps its activities', () => {
 
   const snap = readSnapshot(store);
   expect(snap.sections.map(section => section.name)).toEqual(['Post work', 'Post dinner']);
+  expect(snap.removed.sections).toEqual([{ id: sectionId('Bedtime'), name: 'Bedtime', position: 2 }]);
   expect(snap.listings).toHaveLength(6);
   expect(snap.activities).toHaveLength(7);
+});
+
+test('a deleted activity or section is not live, and is listed in removed with its name', () => {
+  const { store, activityId, sectionId } = basicDay();
+  deleteActivity(store, activityId('Read'));
+  deleteSection(store, sectionId('Bedtime'));
+
+  const snap = readSnapshot(store);
+  expect(snap.activities.some(activity => activity.name === 'Read')).toBe(false);
+  expect(snap.removed.activities).toEqual([{ id: activityId('Read'), name: 'Read', committed: false }]);
+  expect(snap.sections.some(section => section.name === 'Bedtime')).toBe(false);
+  expect(snap.removed.sections).toEqual([{ id: sectionId('Bedtime'), name: 'Bedtime', position: 2 }]);
+  expect(snap.removed.templates).toEqual([]);
+});
+
+test('journal entries of a deleted activity and a deleted section still resolve to their names', () => {
+  const { store, activityId, sectionId } = basicDay();
+  addPastEntry(store, { activityId: activityId('Read'), sectionId: sectionId('Bedtime'), day: '2026-10-11' });
+  deleteActivity(store, activityId('Read'));
+  deleteSection(store, sectionId('Bedtime'));
+
+  const snap = readSnapshot(store);
+  const [entry] = snap.journal;
+  expect(activityName(snap, entry.activityId)).toBe('Read');
+  expect(sectionName(snap, entry.sectionId)).toBe('Bedtime');
+});
+
+test('adding a name with the same key as a live activity reuses it and adds no row', () => {
+  const { store, activityId, sectionId } = basicDay();
+  const gym = activityId('Gym');
+  const rowCount = store.getRowCount('activities');
+
+  expect(addActivity(store, 'gyms')).toBe(gym);
+  expect(addActivityToSection(store, sectionId('Bedtime'), 'GYM.')).toBe(gym);
+
+  expect(store.getRowCount('activities')).toBe(rowCount);
+  expect(readSnapshot(store).activities).toHaveLength(7);
+});
+
+test('adding a name with the key of a deleted activity brings it back quick, with its id and no rest days', () => {
+  const { store, activityId } = basicDay();
+  const gym = activityId('Gym');
+  setActivityCommitted(store, gym, true);
+  setActivityRestDays(store, gym, 2);
+  deleteActivity(store, gym);
+
+  expect(addActivity(store, 'gyms')).toBe(gym);
+
+  const snap = readSnapshot(store);
+  expect(snap.activities.find(activity => activity.id === gym)).toStrictEqual({ id: gym, name: 'Gym', committed: false });
+  expect(snap.removed.activities).toEqual([]);
+});
+
+test('adding a deleted activity to a section with committed true brings it back committed and listed', () => {
+  const { store, activityId, sectionId } = basicDay();
+  const read = activityId('Read');
+  deleteActivity(store, read);
+
+  const id = addActivityToSection(store, sectionId('Bedtime'), 'read', { committed: true });
+
+  expect(id).toBe(read);
+  const snap = readSnapshot(store);
+  expect(snap.activities.find(activity => activity.id === read)).toEqual({ id: read, name: 'Read', committed: true });
+  expect(sectionActivities(snap, sectionId('Bedtime')).map(activity => activity.name)).toContain('Read');
+});
+
+test('adding a deleted activity to a section without committed brings it back quick, even if it was committed', () => {
+  const { store, activityId, sectionId } = basicDay();
+  const read = activityId('Read');
+  setActivityCommitted(store, read, true);
+  deleteActivity(store, read);
+
+  expect(addActivityToSection(store, sectionId('Bedtime'), 'Read')).toBe(read);
+  expect(readSnapshot(store).activities.find(activity => activity.id === read)?.committed).toBe(false);
+});
+
+test('addSection reuses the live section with the same key, ignoring case, spacing and hyphens', () => {
+  const { store, sectionId } = basicDay();
+
+  expect(addSection(store, 'post-work')).toBe(sectionId('Post work'));
+  expect(readSnapshot(store).sections).toHaveLength(3);
+});
+
+test('addSection brings back a deleted section with its id, and it has no listings', () => {
+  const { store, sectionId } = basicDay();
+  const bedtime = sectionId('Bedtime');
+  deleteSection(store, bedtime);
+
+  expect(addSection(store, 'bedtime')).toBe(bedtime);
+
+  const snap = readSnapshot(store);
+  expect(snap.sections.map(section => section.name)).toEqual(['Post work', 'Post dinner', 'Bedtime']);
+  expect(snap.removed.sections).toEqual([]);
+  expect(snap.listings.some(listing => listing.sectionId === bedtime)).toBe(false);
+});
+
+test('addSection prefers a live section with the same key over a deleted one', () => {
+  const { store, sectionId } = basicDay();
+  deleteSection(store, sectionId('Bedtime'));
+  store.setRow('sections', 'bedtime-again', { name: 'Bedtime.', position: 3 });
+
+  expect(addSection(store, 'Bedtime')).toBe('bedtime-again');
+});
+
+test('renaming refuses a name that another live row has by key, and changes nothing', () => {
+  const { store, activityId, sectionId } = basicDay();
+
+  expect(renameSection(store, sectionId('Bedtime'), 'post-work')).toBe(false);
+  expect(renameActivity(store, activityId('Journal'), 'READ')).toBe(false);
+
+  const snap = readSnapshot(store);
+  expect(snap.sections.find(section => section.id === sectionId('Bedtime'))?.name).toBe('Bedtime');
+  expect(snap.activities.find(activity => activity.id === activityId('Journal'))?.name).toBe('Journal');
+});
+
+test('renaming to the name of a deleted row is allowed, and renaming a row to its own key is too', () => {
+  const { store, activityId, sectionId } = basicDay();
+  deleteActivity(store, activityId('Read'));
+  deleteSection(store, sectionId('Bedtime'));
+
+  expect(renameActivity(store, activityId('Journal'), 'read')).toBe(true);
+  expect(renameSection(store, sectionId('Post dinner'), 'bedtime.')).toBe(true);
+  expect(renameActivity(store, activityId('Gym'), 'GYM.')).toBe(true);
+
+  const snap = readSnapshot(store);
+  expect(snap.activities.find(activity => activity.id === activityId('Journal'))?.name).toBe('read');
+  expect(snap.sections.find(section => section.id === sectionId('Post dinner'))?.name).toBe('bedtime.');
+});
+
+test('renaming a deleted row is refused and changes nothing', () => {
+  const { store, activityId, sectionId } = basicDay();
+  deleteActivity(store, activityId('Read'));
+  deleteSection(store, sectionId('Bedtime'));
+
+  expect(renameActivity(store, activityId('Read'), 'Reading')).toBe(false);
+  expect(renameSection(store, sectionId('Bedtime'), 'Night')).toBe(false);
+
+  const snap = readSnapshot(store);
+  expect(snap.removed.activities.map(activity => activity.name)).toEqual(['Read']);
+  expect(snap.removed.sections.map(section => section.name)).toEqual(['Bedtime']);
+});
+
+test('setActivityRestDays stores whole days of 1 or more, and removes the rest days otherwise', () => {
+  const { store, activityId } = basicDay();
+  const gym = activityId('Gym');
+  const restDaysOf = () => readSnapshot(store).activities.find(activity => activity.id === gym)?.restDays;
+
+  setActivityRestDays(store, gym, 30);
+  expect(restDaysOf()).toBe(30);
+  setActivityRestDays(store, gym, 2.7);
+  expect(restDaysOf()).toBe(2);
+
+  for (const days of [0, 0.5, -1, NaN, Infinity]) {
+    setActivityRestDays(store, gym, 3);
+    setActivityRestDays(store, gym, days);
+    expect(store.hasCell('activities', gym, 'restDays'), String(days)).toBe(false);
+    expect(restDaysOf(), String(days)).toBeUndefined();
+  }
+});
+
+test('setActivityRestDays ignores a deleted activity', () => {
+  const { store, activityId } = basicDay();
+  const read = activityId('Read');
+  deleteActivity(store, read);
+
+  setActivityRestDays(store, read, 4);
+
+  expect(store.hasCell('activities', read, 'restDays')).toBe(false);
 });
 
 test('deleting a section removes its slots from every template, and the day no longer shows them', () => {
@@ -121,6 +290,7 @@ test('deleting a section removes its slots from every template, and the day no l
   expect(nowView(snap, at(21, 0)).slots.map(slot => slot.item.name)).toEqual(['Post work', 'Post dinner']);
   expect(snap.journal).toHaveLength(1);
   expect(snap.journal[0].sectionId).toBe(sectionId('Bedtime'));
+  expect(snap.removed.sections.map(section => section.name)).toEqual(['Bedtime']);
 });
 
 test('renaming a section renames its slot in every template that uses it', () => {
@@ -245,6 +415,7 @@ test('deleteActivity removes the activity and every listing of it, and keeps its
 
   const snap = readSnapshot(store);
   expect(snap.activities.some(activity => activity.id === read)).toBe(false);
+  expect(snap.removed.activities.map(activity => activity.name)).toEqual(['Read']);
   expect(snap.listings.some(listing => listing.activityId === read)).toBe(false);
   expect(snap.listings).toHaveLength(6);
   expect(snap.journal).toHaveLength(1);

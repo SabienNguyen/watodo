@@ -3,7 +3,8 @@ import { act, fireEvent, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import {
   addLabel, addSection, blankDraft, createWatodoStore, deleteActivity, deleteLabel, deleteSection,
-  deleteTemplate, finishSetup, readSnapshot, saveTemplate, setActivityCommitted, setUpStarter, type Id, type WatodoStore,
+  deleteTemplate, finishSetup, readSnapshot, saveTemplate, setActivityCommitted, setActivityRestDays, setUpStarter,
+  type Id, type WatodoStore,
 } from '@/domain'
 import { renderWithWatodo } from '@/ui/testing'
 import { EditScreen } from './EditScreen'
@@ -1081,5 +1082,183 @@ describe('Templates', () => {
     expect(screen.queryByRole('heading', { name: 'Edit template' })).toBeNull()
     expect(screen.getByRole('tab', { name: 'Templates' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('button', { name: 'Basic day' })).toBeInTheDocument()
+  })
+})
+
+describe('Names that are the same or close', () => {
+  test('a slot name that is the same as an existing one, apart from case and punctuation, opens that slot with no duplicate', () => {
+    const { store } = renderEdit()
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Slot name' }), { target: { value: 'post-work' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add slot' }))
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(readSnapshot(store).sections.map(s => s.name)).toEqual(['Post work', 'Post dinner', 'Bedtime'])
+    expect(screen.getByRole('heading', { name: 'Post work' })).toBeInTheDocument()
+  })
+
+  test('a close slot name asks first, and Use it opens the existing slot', () => {
+    const { store } = renderEdit()
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Slot name' }), { target: { value: 'Bedtime routine' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add slot' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Use Bedtime' }))
+
+    expect(readSnapshot(store).sections.map(s => s.name)).toEqual(['Post work', 'Post dinner', 'Bedtime'])
+    expect(screen.getByRole('heading', { name: 'Bedtime' })).toBeInTheDocument()
+  })
+
+  test('renaming a slot to the name of another slot shows the alert and keeps the name', () => {
+    const { store } = renderEdit()
+    tapRow('Post dinner')
+    const nameField = screen.getByRole('textbox', { name: 'Slot name' })
+
+    fireEvent.change(nameField, { target: { value: 'post work' } })
+    fireEvent.blur(nameField)
+
+    expect(screen.getByRole('alert')).toHaveTextContent('You already have Post work.')
+    expect(nameField).toHaveValue('Post dinner')
+    expect(readSnapshot(store).sections.map(s => s.name)).toContain('Post dinner')
+  })
+
+  test('renaming a slot to a close name asks, and Rename renames it', () => {
+    const { store } = renderEdit()
+    tapRow('Post dinner')
+    const nameField = screen.getByRole('textbox', { name: 'Slot name' })
+
+    fireEvent.change(nameField, { target: { value: 'Bedtime snack' } })
+    fireEvent.blur(nameField)
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Rename' }))
+
+    expect(readSnapshot(store).sections.map(s => s.name)).toEqual(['Post work', 'Bedtime snack', 'Bedtime'])
+    expect(screen.getByRole('heading', { name: 'Bedtime snack' })).toBeInTheDocument()
+  })
+
+  test('a close activity name in a slot shows a suggestion, and tapping it lists that activity there', () => {
+    const { store } = renderEdit()
+    tapRow('Post dinner')
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'New activity in Post dinner' }), { target: { value: 'Gym session' } })
+    fireEvent.click(within(screen.getByRole('group', { name: 'Similar names' })).getByRole('button', { name: 'Gym' }))
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(listedNames(store, 'Post dinner')).toContain('Gym')
+    expect(readSnapshot(store).activities.filter(a => a.name === 'Gym')).toHaveLength(1)
+  })
+
+  test('a same-key activity name in a slot lists the existing activity, with no question and no duplicate', () => {
+    const { store } = renderEdit()
+    const before = readSnapshot(store).activities.length
+    tapRow('Post dinner')
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'New activity in Post dinner' }), { target: { value: 'gyms' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(readSnapshot(store).activities).toHaveLength(before)
+    expect(listedNames(store, 'Post dinner')).toContain('Gym')
+  })
+
+  test('a same-key activity name on the Activities tab opens the existing activity, with no duplicate', () => {
+    const { store } = renderEdit()
+    const before = readSnapshot(store).activities.length
+    pressTab('Activities')
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Activity name' }), { target: { value: 'gyms' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add activity' }))
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(readSnapshot(store).activities).toHaveLength(before)
+    expect(screen.getByRole('heading', { name: 'Gym' })).toBeInTheDocument()
+  })
+
+  test('a close activity name asks first, and Add new creates it alongside the existing one', () => {
+    const { store } = renderEdit()
+    pressTab('Activities')
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Activity name' }), { target: { value: 'Gym session' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add activity' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Add new' }))
+
+    expect(readSnapshot(store).activities.map(a => a.name)).toContain('Gym session')
+    expect(readSnapshot(store).activities.map(a => a.name)).toContain('Gym')
+    expect(screen.getByRole('heading', { name: 'Gym session' })).toBeInTheDocument()
+  })
+
+  test('renaming an activity to the name of another shows the alert and keeps the name', () => {
+    renderEdit()
+    pressTab('Activities')
+    tapRow('Walk')
+    const nameField = screen.getByRole('textbox', { name: 'Activity name' })
+
+    fireEvent.change(nameField, { target: { value: 'gyms' } })
+    fireEvent.blur(nameField)
+
+    expect(screen.getByRole('alert')).toHaveTextContent('You already have Gym.')
+    expect(screen.getByRole('heading', { name: 'Walk' })).toBeInTheDocument()
+  })
+
+  test('renaming an activity to a close name asks, Cancel keeps the name, and Rename renames it', () => {
+    const { store } = renderEdit()
+    pressTab('Activities')
+    tapRow('Gym')
+    const nameField = screen.getByRole('textbox', { name: 'Activity name' })
+
+    fireEvent.change(nameField, { target: { value: 'Walk fast' } })
+    fireEvent.blur(nameField)
+    expect(within(screen.getByRole('dialog')).getByRole('heading', { name: 'You already have Walk. Rename anyway?' }))
+      .toBeInTheDocument()
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }))
+
+    expect(readSnapshot(store).activities.map(a => a.name)).toContain('Gym')
+    expect(screen.getByRole('heading', { name: 'Gym' })).toBeInTheDocument()
+
+    fireEvent.change(nameField, { target: { value: 'Walk fast' } })
+    fireEvent.blur(nameField)
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Rename' }))
+
+    expect(readSnapshot(store).activities.map(a => a.name)).toContain('Walk fast')
+    expect(screen.getByRole('heading', { name: 'Walk fast' })).toBeInTheDocument()
+  })
+})
+
+describe('Rest days', () => {
+  test('the activity view has a Rest days field under Committed, blank for an activity that never rests', () => {
+    renderEdit()
+    pressTab('Activities')
+    tapRow('Walk')
+
+    const days = screen.getByRole('spinbutton', { name: 'Rest days' })
+    expect(days).toHaveValue(null)
+    expect(days).toHaveAttribute('min', '0')
+    expect(screen.getByLabelText('Rest days')).toBe(days)
+  })
+
+  test('a number typed in Rest days is stored on blur, and a cleared field removes it on Enter', () => {
+    const { store } = renderEdit()
+    pressTab('Activities')
+    tapRow('Walk')
+    const days = screen.getByRole('spinbutton', { name: 'Rest days' })
+
+    fireEvent.change(days, { target: { value: '30' } })
+    fireEvent.blur(days)
+    expect(readSnapshot(store).activities.find(a => a.name === 'Walk')?.restDays).toBe(30)
+
+    fireEvent.change(days, { target: { value: '' } })
+    fireEvent.keyDown(days, { key: 'Enter' })
+    expect(readSnapshot(store).activities.find(a => a.name === 'Walk')?.restDays).toBeUndefined()
+  })
+
+  test('the stored rest days are shown when the activity view opens', () => {
+    const store = finishedStore()
+    const gym = readSnapshot(store).activities.find(a => a.name === 'Gym')
+    if (!gym) throw new Error('no Gym activity')
+    setActivityRestDays(store, gym.id, 7)
+    renderEdit(store)
+    pressTab('Activities')
+
+    tapRow('Gym')
+
+    expect(screen.getByRole('spinbutton', { name: 'Rest days' })).toHaveValue(7)
   })
 })

@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import { confirmDay, logActivity } from './logging';
 import { deleteSection } from './menu';
 import {
-  draftFromStarter, draftFromTemplate, moveStep, nowView, sectionActivities, type DraftStep, type Id,
+  draftFromStarter, draftFromTemplate, moveStep, nowView, sectionActivities, templateName, type DraftStep, type Id,
 } from './rules';
 import { createWatodoStore, readSnapshot } from './store';
 import {
@@ -56,6 +56,7 @@ test('deleting the default with a new default names the replacement and deletes 
   expect(deleteTemplate(store, templateId, short)).toBe('deleted');
   const snap = readSnapshot(store);
   expect(snap.templates.map(template => template.id)).toEqual([short]);
+  expect(snap.removed.templates.map(template => template.id)).toEqual([templateId]);
   expect(snap.defaultTemplateId).toBe(short);
   expect(snap.items).toHaveLength(0);
 });
@@ -69,10 +70,38 @@ test('deleting the only template restores the basic day without duplicating sect
   expect(snap.templates[0]).toMatchObject({ name: 'Basic day', labelId });
   expect(snap.templates[0].id).not.toBe(templateId);
   expect(snap.defaultTemplateId).toBe(snap.templates[0].id);
+  expect(snap.removed.templates.map(template => template.name)).toEqual(['Basic day']);
   expect(snap.items).toHaveLength(10);
   expect(snap.sections).toHaveLength(3);
   expect(snap.activities).toHaveLength(7);
   expect(snap.listings).toHaveLength(9);
+});
+
+test('deleting the last live template restores the basic day even when deleted templates exist', () => {
+  const { store, labelId, templateId } = basicDay();
+  const short = saveTemplate(store, { name: 'Short', label: { id: labelId }, steps: [] });
+  expect(deleteTemplate(store, short)).toBe('deleted');
+
+  expect(deleteTemplate(store, templateId)).toBe('restored-basic');
+  const snap = readSnapshot(store);
+  expect(snap.templates).toHaveLength(1);
+  expect(snap.templates[0]).toMatchObject({ name: 'Basic day', labelId });
+  expect(snap.templates[0].id).not.toBe(templateId);
+  expect(snap.defaultTemplateId).toBe(snap.templates[0].id);
+  expect(snap.removed.templates.map(template => template.name)).toEqual(['Basic day', 'Short']);
+  expect(snap.items).toHaveLength(10);
+});
+
+test('the day record of a deleted template still resolves to its name', () => {
+  const { store, labelId } = basicDay();
+  const short = saveTemplate(store, { name: 'Short', label: { id: labelId }, steps: [] });
+  confirmDay(store, () => at(9, 0), short);
+  expect(deleteTemplate(store, short)).toBe('deleted');
+
+  const snap = readSnapshot(store);
+  expect(snap.days.map(day => day.templateId)).toEqual([short]);
+  expect(templateName(snap, short)).toBe('Short');
+  expect(snap.templates.some(template => template.id === short)).toBe(false);
 });
 
 test('restoring the basic day recreates only the sections that are missing', () => {
@@ -93,6 +122,17 @@ test('deleteLabel refuses while a template uses the label', () => {
   expect(readSnapshot(store).labels).toHaveLength(1);
 
   const weekend = addLabel(store, 'Weekend');
+  expect(deleteLabel(store, weekend)).toBe(true);
+  expect(readSnapshot(store).labels.map(label => label.name)).toEqual(['Work day']);
+});
+
+test('deleteLabel succeeds when only deleted templates used the label', () => {
+  const { store } = basicDay();
+  const weekend = addLabel(store, 'Weekend');
+  const weekendDay = saveTemplate(store, { name: 'Weekend day', label: { id: weekend }, steps: [] });
+  expect(deleteLabel(store, weekend)).toBe(false);
+
+  expect(deleteTemplate(store, weekendDay)).toBe('deleted');
   expect(deleteLabel(store, weekend)).toBe(true);
   expect(readSnapshot(store).labels.map(label => label.name)).toEqual(['Work day']);
 });
@@ -187,6 +227,23 @@ test('saving the weekend starter creates the Weekend label, a Free time section,
   expect(orderOf(store, weekend)).toEqual([
     'Wake up', 'Brush teeth', 'Change clothes', 'Free time', 'Lunch', 'Free time', 'Dinner', 'Post dinner', 'Bedtime',
     'Brush teeth', 'Sleep',
+  ]);
+});
+
+test('a slot named by the key of a deleted section brings that section back, with no suggested activities', () => {
+  const { store, labelId, sectionId } = basicDay();
+  const bedtime = sectionId('Bedtime');
+  deleteSection(store, bedtime);
+
+  const night = saveTemplate(store, {
+    name: 'Night', label: { id: labelId }, steps: [{ kind: 'slot', slotName: 'bedtime' }],
+  });
+
+  const snap = readSnapshot(store);
+  expect(snap.sections.filter(section => section.name === 'Bedtime')).toEqual([{ id: bedtime, name: 'Bedtime', position: 2 }]);
+  expect(snap.listings.some(listing => listing.sectionId === bedtime)).toBe(false);
+  expect(snap.items.filter(item => item.templateId === night)).toEqual([
+    expect.objectContaining({ kind: 'slot', name: 'Bedtime', sectionId: bedtime }),
   ]);
 });
 

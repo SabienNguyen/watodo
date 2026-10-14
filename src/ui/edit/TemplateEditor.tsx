@@ -3,7 +3,7 @@ import { DragDropProvider, KeyboardSensor, PointerSensor, type DragEndEvent } fr
 import { isSortable, useSortable } from '@dnd-kit/react/sortable'
 import { GripVerticalIcon, XIcon } from 'lucide-react'
 import {
-  moveStep, saveTemplate, type DraftStep, type Id, type Section, type TemplateDraft,
+  closeNames, moveStep, saveTemplate, type DraftStep, type Id, type Section, type TemplateDraft,
 } from '@/domain'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NativeSelect } from '@/ui/NativeSelect'
 import { useSnapshot, useWatodo } from '@/ui/hooks'
+import { NameSuggestions } from './fields'
 import { dragActivation } from './dragActivation'
 
 const NEW_LABEL = '__new-label__'
@@ -232,12 +233,20 @@ function StepRow({ row, index, sections, onChange, onRemove }: {
             <option value={NEW_SLOT}>New slot…</option>
           </NativeSelect>
           {row.typingNew && (
-            <Input
-              aria-label="New slot name"
-              className="col-start-3 row-start-2"
-              value={row.slotName}
-              onChange={event => onChange({ ...row, slotName: event.target.value })}
-            />
+            <>
+              <Input
+                aria-label="New slot name"
+                className="col-start-3 row-start-2"
+                value={row.slotName}
+                onChange={event => onChange({ ...row, slotName: event.target.value })}
+              />
+              {/* Tapping a close slot's name uses that slot; nothing is asked. */}
+              <NameSuggestions
+                className="col-start-3 row-start-3"
+                rows={closeNames(row.slotName, sections)}
+                onPick={name => onChange({ ...row, slotName: name, typingNew: false })}
+              />
+            </>
           )}
         </>
       )}

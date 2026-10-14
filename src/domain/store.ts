@@ -27,9 +27,12 @@ function flag(row: Row, cellId: string): boolean | undefined {
   return typeof cell === 'boolean' ? cell : undefined;
 }
 
-function readRows<T>(store: WatodoStore, tableId: string, read: RowReader<T>): T[] {
+/** The rows of a table that `read` can read: the live ones, or with `deleted` the rows marked deleted. */
+function readRows<T>(store: WatodoStore, tableId: string, read: RowReader<T>, deleted = false): T[] {
   return store.getRowIds(tableId).flatMap(id => {
-    const value = read(id, store.getRow(tableId, id));
+    const row = store.getRow(tableId, id);
+    if ((row.deleted === true) !== deleted) return [];
+    const value = read(id, row);
     return value === undefined ? [] : [value];
   });
 }
@@ -77,11 +80,15 @@ const readSection: RowReader<Section> = (id, row) => {
   return { id, name, position };
 };
 
-/** An activity with no `committed` cell is quick. */
+/** An activity with no `committed` cell is quick, and one with no `restDays` cell never rests. */
 const readActivity: RowReader<Activity> = (id, row) => {
   const name = text(row, 'name');
   if (name === undefined) return undefined;
-  return { id, name, committed: flag(row, 'committed') === true };
+  const restDays = num(row, 'restDays');
+  const rests = restDays !== undefined && Number.isFinite(restDays) && restDays >= 1;
+  return {
+    id, name, committed: flag(row, 'committed') === true, ...(rests ? { restDays } : {}),
+  };
 };
 
 const readListing: RowReader<Listing> = (_id, row) => {
@@ -128,10 +135,14 @@ function byPosition<T extends { position: number }>(a: T, b: T): number {
   return a.position - b.position;
 }
 
-/** Everything in the store as plain data. Rows missing a required cell are skipped. */
+/**
+ * Everything in the store as plain data. Rows missing a required cell are skipped. Deleted activities,
+ * sections and templates are not live: they are listed in `removed`, for their names.
+ */
 export function readSnapshot(store: WatodoStore): Snapshot {
   const defaultTemplateId = store.getValue(VALUE.defaultTemplateId);
   const sections = readRows(store, TABLE.sections, readSection).sort(byPosition);
+  // Slots are named by live sections only: a slot whose section was deleted is not shown.
   const sectionNames = new Map<Id, string>(sections.map(section => [section.id, section.name]));
   return {
     labels: readRows(store, TABLE.labels, readLabel).sort(byPosition),
@@ -143,6 +154,11 @@ export function readSnapshot(store: WatodoStore): Snapshot {
     journal: readRows(store, TABLE.journal, readJournalEntry).sort((a, b) => a.loggedAt - b.loggedAt),
     days: readRows(store, TABLE.days, readDayRecord).sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0)),
     defaultTemplateId: typeof defaultTemplateId === 'string' ? defaultTemplateId : null,
+    removed: {
+      activities: readRows(store, TABLE.activities, readActivity, true),
+      sections: readRows(store, TABLE.sections, readSection, true).sort(byPosition),
+      templates: readRows(store, TABLE.templates, readTemplate, true).sort(byPosition),
+    },
   };
 }
 
