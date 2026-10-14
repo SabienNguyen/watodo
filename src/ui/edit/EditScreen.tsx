@@ -2,14 +2,15 @@ import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'rea
 import { ChevronLeftIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import {
-  addLabel, addSection, addActivityToSection, deleteLabel, deleteSection, deleteTemplate,
-  draftFromTemplate, removeActivityFromSection, renameActivity, renameLabel, renameSection,
-  setActivityCommitted, setDefaultTemplate, setLabelWeekdays, templatesUsingSection, type Id, type Label, type Section,
-  type Snapshot, type TemplateDraft,
+  addActivity, addLabel, addSection, addActivityToSection, deleteActivity, deleteLabel, deleteSection, deleteTemplate,
+  draftFromTemplate, removeActivityFromSection, renameActivity, renameLabel, renameSection, sectionsOfActivity,
+  setActivityCommitted, setActivityInSection, setDefaultTemplate, setLabelWeekdays, templatesUsingSection,
+  type Activity, type Id, type Label, type Section, type Snapshot, type TemplateDraft,
 } from '@/domain'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { useSnapshot, useWatodo } from '@/ui/hooks'
 import { AddField, EditableText } from './fields'
 import { NameRow } from './NameRow'
@@ -18,7 +19,7 @@ import { TemplateEditorForm } from './TemplateEditor'
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
-const PARTS = ['Slots', 'Templates', 'Labels'] as const
+const PARTS = ['Slots', 'Activities', 'Templates', 'Labels'] as const
 type Part = (typeof PARTS)[number]
 
 const PART = 'flex flex-col gap-4'
@@ -30,12 +31,14 @@ const LIST = 'flex flex-col divide-y'
  */
 type Editing =
   | { kind: 'slot'; id: Id }
+  | { kind: 'activity'; id: Id }
   | { kind: 'label'; id: Id }
   | { kind: 'template'; draft: TemplateDraft; session: string }
 
 /** An editing view as the snapshot holds it now. */
 type Shown =
   | { kind: 'slot'; section: Section }
+  | { kind: 'activity'; activity: Activity }
   | { kind: 'label'; label: Label }
   | Extract<Editing, { kind: 'template' }>
 
@@ -45,6 +48,10 @@ function resolve(snap: Snapshot, editing: Editing | null): Shown | null {
   if (editing.kind === 'slot') {
     const section = snap.sections.find(candidate => candidate.id === editing.id)
     return section === undefined ? null : { kind: 'slot', section }
+  }
+  if (editing.kind === 'activity') {
+    const activity = snap.activities.find(candidate => candidate.id === editing.id)
+    return activity === undefined ? null : { kind: 'activity', activity }
   }
   if (editing.kind === 'label') {
     const label = snap.labels.find(candidate => candidate.id === editing.id)
@@ -88,6 +95,9 @@ export function EditScreen() {
   if (shown?.kind === 'slot') {
     return <SlotView key={shown.section.id} part={part} section={shown.section} onBack={back} />
   }
+  if (shown?.kind === 'activity') {
+    return <ActivityView key={shown.activity.id} part={part} activity={shown.activity} onBack={back} />
+  }
   if (shown?.kind === 'label') {
     return <LabelView key={shown.label.id} part={part} label={shown.label} onBack={back} />
   }
@@ -105,7 +115,7 @@ export function EditScreen() {
 
   return (
     <div className="flex flex-col">
-      <div role="tablist" aria-label="Edit parts" className="grid grid-cols-3 border-b">
+      <div role="tablist" aria-label="Edit parts" className="grid grid-cols-4 border-b">
         {PARTS.map(name => {
           const selected = name === part
           return (
@@ -120,7 +130,7 @@ export function EditScreen() {
               tabIndex={selected ? 0 : -1}
               onClick={() => setPart(name)}
               onKeyDown={event => moveWithArrows(event, name)}
-              className={`-mb-px min-h-11 rounded-t-lg border px-2 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
+              className={`-mb-px min-h-11 rounded-t-lg border px-1 text-sm whitespace-nowrap outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
                 selected
                   ? 'border-border bg-background font-semibold text-foreground'
                   : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -134,6 +144,7 @@ export function EditScreen() {
 
       <div role="tabpanel" id={panelId} aria-labelledby={tabId(part)} className="rounded-b-xl border border-t-0 p-4">
         {part === 'Slots' && <SlotsPart onOpen={id => edit({ kind: 'slot', id })} />}
+        {part === 'Activities' && <ActivitiesPart onOpen={id => edit({ kind: 'activity', id })} />}
         {part === 'Labels' && <LabelsPart onOpen={id => edit({ kind: 'label', id })} />}
         {part === 'Templates' && <TemplatesPart onOpenDraft={openDraft} />}
       </div>
@@ -188,6 +199,8 @@ function SlotView({ part, section, onBack }: { part: Part; section: Section; onB
   const snap = useSnapshot()
   // Whether the delete dialog is open.
   const [deleting, setDeleting] = useState(false)
+  // Whether the activity added next is committed. Unticked after each add.
+  const [committed, setCommitted] = useState(false)
   const using = templatesUsingSection(snap, section.id)
   const activities = snap.listings
     .filter(listing => listing.sectionId === section.id)
@@ -212,20 +225,8 @@ function SlotView({ part, section, onBack }: { part: Part; section: Section; onB
       <ul className="flex flex-col gap-2">
         {activities.map(activity => (
           <li key={activity.id} className="flex items-center gap-2">
-            <EditableText
-              aria-label="Activity name"
-              value={activity.name}
-              onCommit={text => renameActivity(store, activity.id, text)}
-            />
-            <label className="flex shrink-0 items-center gap-1 text-sm text-muted-foreground">
-              <input
-                type="checkbox"
-                aria-label={`${activity.name} is committed`}
-                checked={activity.committed}
-                onChange={event => setActivityCommitted(store, activity.id, event.target.checked)}
-              />
-              Committed
-            </label>
+            <span className="min-w-0 flex-1 truncate">{activity.name}</span>
+            {activity.committed && <Badge variant="secondary" className="shrink-0">committed</Badge>}
             <Button
               variant="ghost"
               size="sm"
@@ -242,7 +243,21 @@ function SlotView({ part, section, onBack }: { part: Part; section: Section; onB
         label={`New activity in ${section.name}`}
         placeholder="Activity name"
         button="Add"
-        onAdd={name => addActivityToSection(store, section.id, name)}
+        extra={(
+          <label className="flex items-center gap-1.5 text-sm whitespace-nowrap">
+            <input
+              type="checkbox"
+              aria-label="New activity is committed"
+              checked={committed}
+              onChange={event => setCommitted(event.target.checked)}
+            />
+            Committed
+          </label>
+        )}
+        onAdd={name => {
+          addActivityToSection(store, section.id, name, { committed })
+          setCommitted(false)
+        }}
       />
 
       <div className="flex justify-end">
@@ -272,6 +287,129 @@ function SlotView({ part, section, onBack }: { part: Part; section: Section; onB
               }}
             >
               Delete slot
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </EditingFrame>
+  )
+}
+
+/**
+ * Every activity once, by name without regard to case. The search keeps the activities whose names
+ * contain its text, ignoring case and surrounding spaces. Adding one opens its view; a blank name is ignored.
+ */
+function ActivitiesPart({ onOpen }: { onOpen(id: Id): void }) {
+  const { store } = useWatodo()
+  const snap = useSnapshot()
+  // The search text is plain component state: it resets when the tab or an activity's view is left.
+  const [search, setSearch] = useState('')
+  const query = search.trim().toLowerCase()
+  const activities = [...snap.activities]
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+    .filter(activity => activity.name.toLowerCase().includes(query))
+
+  return (
+    <div className={PART}>
+      <Input
+        type="search"
+        aria-label="Search activities"
+        placeholder="Search"
+        value={search}
+        onChange={event => setSearch(event.target.value)}
+      />
+
+      {activities.length === 0 && query !== '' ? (
+        <p className="text-sm text-muted-foreground">No activities match.</p>
+      ) : (
+        <ul className={LIST}>
+          {activities.map(activity => (
+            <NameRow
+              key={activity.id}
+              name={activity.name}
+              badge={activity.committed ? 'committed' : undefined}
+              onOpen={() => onOpen(activity.id)}
+            />
+          ))}
+        </ul>
+      )}
+
+      <AddField
+        label="Activity name"
+        placeholder="Activity name"
+        button="Add activity"
+        onAdd={name => {
+          const id = addActivity(store, name)
+          if (id !== '') onOpen(id)
+        }}
+      />
+    </div>
+  )
+}
+
+/** An activity's editing view: its name, whether it is committed, the slots it is listed in, and deleting it. */
+function ActivityView({ part, activity, onBack }: { part: Part; activity: Activity; onBack(): void }) {
+  const { store } = useWatodo()
+  const snap = useSnapshot()
+  // Whether the delete dialog is open.
+  const [deleting, setDeleting] = useState(false)
+  const slotsHeading = useId()
+  const listed = new Set(sectionsOfActivity(snap, activity.id).map(section => section.id))
+
+  return (
+    <EditingFrame part={part} heading={activity.name} onBack={onBack}>
+      <EditableText
+        aria-label="Activity name"
+        value={activity.name}
+        onCommit={name => renameActivity(store, activity.id, name)}
+      />
+
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          aria-label={`${activity.name} is committed`}
+          checked={activity.committed}
+          onChange={event => setActivityCommitted(store, activity.id, event.target.checked)}
+        />
+        Committed
+      </label>
+
+      <div role="group" aria-labelledby={slotsHeading} className="flex flex-col gap-2">
+        <h3 id={slotsHeading} className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Slots</h3>
+        {snap.sections.map(section => (
+          <label key={section.id} className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={listed.has(section.id)}
+              onChange={event => setActivityInSection(store, activity.id, section.id, event.target.checked)}
+            />
+            {section.name}
+          </label>
+        ))}
+      </div>
+
+      <div className="flex justify-end">
+        <Button variant="ghost" size="sm" onClick={() => setDeleting(true)}>
+          Delete activity
+        </Button>
+      </div>
+
+      <Dialog open={deleting} onOpenChange={setDeleting}>
+        <DialogContent aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>{`Delete "${activity.name}"?`}</DialogTitle>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setDeleting(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                deleteActivity(store, activity.id)
+                setDeleting(false)
+                onBack()
+              }}
+            >
+              Delete activity
             </Button>
           </div>
         </DialogContent>

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { ComponentProps, FormEvent } from 'react'
+import type { ComponentProps, FormEvent, ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -40,11 +40,16 @@ export function EditableText({ value, onCommit, ...props }: InputProps & {
   )
 }
 
-/** A text field and an Add button. Blank names are ignored; the field clears after each add. */
-export function AddField({ label, placeholder, button, onAdd }: {
+/**
+ * A text field and an Add button. Blank names are ignored; the field clears after each add.
+ * `extra`, such as a checkbox, sits between the field and the button. When the row is too narrow
+ * for all three, `extra` moves to its own line under the field.
+ */
+export function AddField({ label, placeholder, button, extra, onAdd }: {
   label: string
   placeholder: string
   button: string
+  extra?: ReactNode
   onAdd(name: string): void
 }) {
   const [text, setText] = useState('')
@@ -57,15 +62,34 @@ export function AddField({ label, placeholder, button, onAdd }: {
     setText('')
   }
 
+  if (extra === undefined) {
+    return (
+      <form onSubmit={submit} className="flex items-center gap-2">
+        <Input
+          aria-label={label}
+          placeholder={placeholder}
+          value={text}
+          onChange={event => setText(event.target.value)}
+        />
+        <Button type="submit" variant="outline" className="shrink-0">{button}</Button>
+      </form>
+    )
+  }
+
+  // Lays out by the form's own width (a container query), at 20rem or more for three columns.
   return (
-    <form onSubmit={submit} className="flex items-center gap-2">
-      <Input
-        aria-label={label}
-        placeholder={placeholder}
-        value={text}
-        onChange={event => setText(event.target.value)}
-      />
-      <Button type="submit" variant="outline" className="shrink-0">{button}</Button>
+    <form onSubmit={submit} className="@container">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 @xs:grid-cols-[minmax(8rem,1fr)_auto_auto]">
+        <Input
+          className="col-start-1 row-start-1"
+          aria-label={label}
+          placeholder={placeholder}
+          value={text}
+          onChange={event => setText(event.target.value)}
+        />
+        <div className="col-start-1 row-start-2 @xs:col-start-2 @xs:row-start-1">{extra}</div>
+        <Button type="submit" variant="outline" className="col-start-2 row-start-1 @xs:col-start-3">{button}</Button>
+      </div>
     </form>
   )
 }

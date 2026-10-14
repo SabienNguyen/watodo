@@ -2,8 +2,8 @@
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import {
-  addLabel, addSection, blankDraft, createWatodoStore, deleteLabel, deleteSection, deleteTemplate,
-  finishSetup, readSnapshot, saveTemplate, setActivityCommitted, setUpStarter, type Id, type WatodoStore,
+  addLabel, addSection, blankDraft, createWatodoStore, deleteActivity, deleteLabel, deleteSection,
+  deleteTemplate, finishSetup, readSnapshot, saveTemplate, setActivityCommitted, setUpStarter, type Id, type WatodoStore,
 } from '@/domain'
 import { renderWithWatodo } from '@/ui/testing'
 import { EditScreen } from './EditScreen'
@@ -28,8 +28,10 @@ function renderEdit(store: WatodoStore = finishedStore()) {
   return renderWithWatodo(<EditScreen />, { store })
 }
 
+type PartName = 'Slots' | 'Activities' | 'Templates' | 'Labels'
+
 /** Presses one of the Edit screen's tabs. */
-function pressTab(name: 'Slots' | 'Labels' | 'Templates') {
+function pressTab(name: PartName) {
   fireEvent.click(screen.getByRole('tab', { name }))
 }
 
@@ -39,18 +41,13 @@ function tapRow(name: string) {
 }
 
 /** Presses the back button of the editing view that is open. */
-function goBack(part: 'Slots' | 'Labels' | 'Templates') {
+function goBack(part: PartName) {
   fireEvent.click(screen.getByRole('button', { name: `Back to ${part}` }))
 }
 
 /** Adds a template with no steps under the first label. */
 function addTemplate(store: WatodoStore, name: string): Id {
   return saveTemplate(store, { ...blankDraft(readSnapshot(store)), name })
-}
-
-/** The li that holds the field showing this value. */
-function rowOf(displayValue: string): HTMLElement {
-  return screen.getByDisplayValue(displayValue).closest('li') as HTMLElement
 }
 
 function listedNames(store: WatodoStore, sectionName: string): string[] {
@@ -61,6 +58,35 @@ function listedNames(store: WatodoStore, sectionName: string): string[] {
     .filter(listing => listing.sectionId === section.id)
     .map(listing => snap.activities.find(a => a.id === listing.activityId)?.name ?? '')
 }
+
+/** The names of the slots that list the activity with this name. */
+function sectionsListing(store: WatodoStore, activityName: string): string[] {
+  const snap = readSnapshot(store)
+  const activity = snap.activities.find(a => a.name === activityName)
+  if (!activity) throw new Error(`no activity ${activityName}`)
+  return snap.listings
+    .filter(listing => listing.activityId === activity.id)
+    .map(listing => snap.sections.find(s => s.id === listing.sectionId)?.name ?? '')
+}
+
+/** The li of an activity shown as plain text in a slot's view. */
+function activityRow(name: string): HTMLElement {
+  return screen.getByText(name).closest('li') as HTMLElement
+}
+
+/** The li of a list row whose button is named by the item's name. */
+function namedRow(name: string): HTMLElement {
+  return screen.getByRole('button', { name }).closest('li') as HTMLElement
+}
+
+/** The names of the activity rows on the Activities tab, in the order they are shown. */
+function activityRowNames(): string[] {
+  return within(screen.getByRole('tabpanel'))
+    .queryAllByRole('listitem')
+    .map(row => within(row).getByRole('button').getAttribute('aria-label') ?? '')
+}
+
+const ALL_ACTIVITY_NAMES = ['Call family', 'Guitar', 'Gym', 'Journal', 'Read', 'Stretch', 'Walk']
 
 /** The li of a template row, found by its name, which is a text node rather than a field. */
 function templateRow(name: string): HTMLElement {
@@ -79,9 +105,10 @@ describe('Tabs', () => {
   test('the screen opens on the Slots tab, which is selected and shows only the Slots list', () => {
     renderEdit()
 
-    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Slots', 'Templates', 'Labels'])
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Slots', 'Activities', 'Templates', 'Labels'])
     expect(screen.getByRole('tablist')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Slots' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Activities' })).toHaveAttribute('aria-selected', 'false')
     expect(screen.getByRole('tab', { name: 'Labels' })).toHaveAttribute('aria-selected', 'false')
     expect(screen.getByRole('tab', { name: 'Templates' })).toHaveAttribute('aria-selected', 'false')
 
@@ -127,13 +154,18 @@ describe('Tabs', () => {
     expect(screen.queryByDisplayValue('Work day')).toBeNull()
   })
 
-  test('with Slots focused, the right arrow key selects and focuses Templates, and again goes to Labels', () => {
+  test('with Slots focused, the right arrow key selects and focuses Activities, then Templates, then Labels', () => {
     renderEdit()
     const slots = screen.getByRole('tab', { name: 'Slots' })
 
     slots.focus()
     fireEvent.keyDown(slots, { key: 'ArrowRight' })
 
+    expect(screen.getByRole('tab', { name: 'Activities' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Activities' })).toHaveFocus()
+    expect(screen.getByRole('tabpanel')).toHaveAccessibleName('Activities')
+
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Activities' }), { key: 'ArrowRight' })
     expect(screen.getByRole('tab', { name: 'Templates' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tab', { name: 'Templates' })).toHaveFocus()
     expect(screen.getByRole('tabpanel')).toHaveAccessibleName('Templates')
@@ -246,11 +278,11 @@ describe('Slots', () => {
 
     expect(screen.getByRole('heading', { name: 'Post work' })).toBeInTheDocument()
     for (const name of ['Gym', 'Walk', 'Read']) {
-      expect(screen.getByDisplayValue(name)).toBeInTheDocument()
+      expect(screen.getByText(name)).toBeInTheDocument()
     }
     expect(screen.getByRole('button', { name: 'Delete slot' })).toBeInTheDocument()
     expect(screen.getByText('Used by: Basic day')).toBeInTheDocument()
-    expect(screen.queryByDisplayValue('Guitar')).toBeNull()
+    expect(screen.queryByText('Guitar')).toBeNull()
   })
 
   test('Back to Slots returns to the list with the Slots tab selected', () => {
@@ -297,29 +329,99 @@ describe('Slots', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'New activity in Post work' }), { target: { value: 'Yoga' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
 
-    expect(screen.getByDisplayValue('Yoga')).toBeInTheDocument()
+    expect(screen.getByText('Yoga')).toBeInTheDocument()
     expect(listedNames(store, 'Post work')).toContain('Yoga')
+  })
+
+  test('ticking New activity is committed and pressing Add lists Yoga in Post work as committed, and in no other slot', () => {
+    const { store } = renderEdit()
+    tapRow('Post work')
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'New activity in Post work' }), { target: { value: 'Yoga' } })
+    fireEvent.click(screen.getByRole('checkbox', { name: 'New activity is committed' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    expect(within(activityRow('Yoga')).getByText('committed')).toBeInTheDocument()
+    expect(readSnapshot(store).activities.find(a => a.name === 'Yoga')?.committed).toBe(true)
+    expect(sectionsListing(store, 'Yoga')).toEqual(['Post work'])
+  })
+
+  test('after Add the name field is empty and the committed box is unticked', () => {
+    renderEdit()
+    tapRow('Post work')
+    const nameField = screen.getByRole('textbox', { name: 'New activity in Post work' })
+    const committed = screen.getByRole('checkbox', { name: 'New activity is committed' })
+
+    fireEvent.change(nameField, { target: { value: 'Yoga' } })
+    fireEvent.click(committed)
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    expect(nameField).toHaveValue('')
+    expect(committed).not.toBeChecked()
+  })
+
+  test('adding Swim without ticking the box creates a quick activity listed in Post work', () => {
+    const { store } = renderEdit()
+    tapRow('Post work')
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'New activity in Post work' }), { target: { value: 'Swim' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    expect(within(activityRow('Swim')).queryByText('committed')).toBeNull()
+    expect(readSnapshot(store).activities.find(a => a.name === 'Swim')?.committed).toBe(false)
+    expect(sectionsListing(store, 'Swim')).toEqual(['Post work'])
+  })
+
+  test('with the box ticked, adding read lists the existing Read in Post work and leaves Read quick', () => {
+    const { store } = renderEdit()
+    tapRow('Post work')
+    // The starter already lists Read in Post work, so take it out first to show the add put it back.
+    fireEvent.click(within(activityRow('Read')).getByRole('button', { name: 'Remove' }))
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'New activity in Post work' }), { target: { value: 'read' } })
+    fireEvent.click(screen.getByRole('checkbox', { name: 'New activity is committed' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    expect(within(activityRow('Read')).queryByText('committed')).toBeNull()
+    expect(readSnapshot(store).activities).toHaveLength(7)
+    expect(readSnapshot(store).activities.find(a => a.name === 'Read')?.committed).toBe(false)
+    expect(sectionsListing(store, 'Read')).toContain('Post work')
   })
 
   test('Remove takes the activity out of the slot', () => {
     const { store } = renderEdit()
     tapRow('Post work')
 
-    fireEvent.click(within(rowOf('Walk')).getByRole('button', { name: 'Remove' }))
+    fireEvent.click(within(activityRow('Walk')).getByRole('button', { name: 'Remove' }))
 
-    expect(screen.queryByDisplayValue('Walk')).toBeNull()
+    expect(screen.queryByText('Walk')).toBeNull()
     expect(listedNames(store, 'Post work')).not.toContain('Walk')
   })
 
-  test('renaming an activity commits on Enter', () => {
-    const { store } = renderEdit()
+  test('each activity in a slot is plain text with a Remove button, and no name field or Committed checkbox', () => {
+    renderEdit()
     tapRow('Post work')
-    const gym = screen.getByDisplayValue('Gym')
 
-    fireEvent.change(gym, { target: { value: 'Run' } })
-    fireEvent.keyDown(gym, { key: 'Enter' })
+    for (const name of ['Gym', 'Walk', 'Read']) {
+      expect(within(activityRow(name)).getByRole('button', { name: 'Remove' })).toBeInTheDocument()
+      expect(within(activityRow(name)).queryByRole('checkbox')).toBeNull()
+    }
+    expect(screen.queryByRole('textbox', { name: 'Activity name' })).toBeNull()
+  })
 
-    expect(readSnapshot(store).activities.map(a => a.name)).toContain('Run')
+  test('a committed activity shows the committed badge in every slot that lists it', () => {
+    const { store } = renderEdit()
+    const read = readSnapshot(store).activities.find(a => a.name === 'Read')
+    if (!read) throw new Error('no Read activity')
+    setActivityCommitted(store, read.id, true)
+
+    tapRow('Post work')
+    expect(within(activityRow('Read')).getByText('committed')).toBeInTheDocument()
+    expect(within(activityRow('Gym')).queryByText('committed')).toBeNull()
+
+    goBack('Slots')
+    tapRow('Post dinner')
+    expect(within(activityRow('Read')).getByText('committed')).toBeInTheDocument()
   })
 
   test('Delete slot on Post work opens a dialog naming Basic day', () => {
@@ -396,17 +498,155 @@ describe('Slots', () => {
     expect(screen.getByRole('button', { name: 'Post dinner' })).toBeInTheDocument()
   })
 
-  test('each activity has a Committed checkbox, unchecked for a quick activity such as Gym', () => {
+  test('the activities have no explanatory line about committed activities', () => {
     renderEdit()
     tapRow('Post work')
 
-    expect(screen.getByRole('checkbox', { name: 'Gym is committed' })).not.toBeChecked()
-    expect(screen.getByRole('checkbox', { name: 'Walk is committed' })).not.toBeChecked()
+    expect(screen.queryByText("A committed activity uses up the slot for the day. Quick ones don't.")).not.toBeInTheDocument()
+  })
+})
+
+describe('Activities', () => {
+  test('the Activities list has one row per activity, sorted by name without regard to case, and an add field', () => {
+    renderEdit()
+    pressTab('Activities')
+
+    const names = within(screen.getByRole('tabpanel'))
+      .getAllByRole('listitem')
+      .map(row => within(row).getByRole('button').getAttribute('aria-label'))
+    expect(names).toEqual(['Call family', 'Guitar', 'Gym', 'Journal', 'Read', 'Stretch', 'Walk'])
+    expect(screen.getByRole('textbox', { name: 'Activity name' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add activity' })).toBeInTheDocument()
   })
 
-  test('checking Gym is committed makes its activity committed in the snapshot', () => {
+  test('a committed activity shows the committed badge in its row, and the others do not', () => {
     const { store } = renderEdit()
-    tapRow('Post work')
+    const gym = readSnapshot(store).activities.find(a => a.name === 'Gym')
+    if (!gym) throw new Error('no Gym activity')
+    setActivityCommitted(store, gym.id, true)
+    pressTab('Activities')
+
+    expect(within(namedRow('Gym')).getByText('committed')).toBeInTheDocument()
+    expect(within(namedRow('Walk')).queryByText('committed')).toBeNull()
+  })
+
+  test('tapping Read opens its view with Back to Activities, the Slots group, and the three slots it is in checked', () => {
+    renderEdit()
+    pressTab('Activities')
+
+    tapRow('Read')
+
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Back to Activities' })).toHaveTextContent('Activities')
+    expect(screen.getByRole('heading', { name: 'Read' })).toBeInTheDocument()
+    const slots = screen.getByRole('group', { name: 'Slots' })
+    for (const name of ['Post work', 'Post dinner', 'Bedtime']) {
+      expect(within(slots).getByRole('checkbox', { name })).toBeChecked()
+    }
+  })
+
+  test('Gym, in its view, has only Post work checked', () => {
+    renderEdit()
+    pressTab('Activities')
+
+    tapRow('Gym')
+
+    const slots = screen.getByRole('group', { name: 'Slots' })
+    expect(within(slots).getByRole('checkbox', { name: 'Post work' })).toBeChecked()
+    expect(within(slots).getByRole('checkbox', { name: 'Post dinner' })).not.toBeChecked()
+    expect(within(slots).getByRole('checkbox', { name: 'Bedtime' })).not.toBeChecked()
+  })
+
+  test('ticking Bedtime in the Gym view lists Gym in Bedtime, and the Bedtime view then shows it', () => {
+    const { store } = renderEdit()
+    pressTab('Activities')
+    tapRow('Gym')
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Bedtime' }))
+
+    expect(listedNames(store, 'Bedtime')).toContain('Gym')
+    goBack('Activities')
+    pressTab('Slots')
+    tapRow('Bedtime')
+    expect(within(activityRow('Gym')).getByRole('button', { name: 'Remove' })).toBeInTheDocument()
+  })
+
+  test('unticking Post work in the Gym view removes Gym from Post work', () => {
+    const { store } = renderEdit()
+    pressTab('Activities')
+    tapRow('Gym')
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Post work' }))
+
+    expect(listedNames(store, 'Post work')).not.toContain('Gym')
+    expect(screen.getByRole('checkbox', { name: 'Post work' })).not.toBeChecked()
+  })
+
+  test('Add activity with Yoga opens its view with no slot checked, and ticking two slots lists it in both', () => {
+    const { store } = renderEdit()
+    pressTab('Activities')
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Activity name' }), { target: { value: 'Yoga' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add activity' }))
+
+    expect(screen.getByRole('heading', { name: 'Yoga' })).toBeInTheDocument()
+    const slots = screen.getByRole('group', { name: 'Slots' })
+    for (const name of ['Post work', 'Post dinner', 'Bedtime']) {
+      expect(within(slots).getByRole('checkbox', { name })).not.toBeChecked()
+    }
+
+    fireEvent.click(within(slots).getByRole('checkbox', { name: 'Post work' }))
+    fireEvent.click(within(slots).getByRole('checkbox', { name: 'Bedtime' }))
+
+    expect(listedNames(store, 'Post work')).toContain('Yoga')
+    expect(listedNames(store, 'Bedtime')).toContain('Yoga')
+    expect(listedNames(store, 'Post dinner')).not.toContain('Yoga')
+  })
+
+  test('Add activity with a blank name adds nothing and stays on the list', () => {
+    const { store } = renderEdit()
+    pressTab('Activities')
+    const before = readSnapshot(store).activities
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add activity' }))
+
+    expect(readSnapshot(store).activities).toEqual(before)
+    expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
+    expect(screen.getByRole('tab', { name: 'Activities' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  test('renaming in the activity view changes the heading and, after going back, the row', () => {
+    renderEdit()
+    pressTab('Activities')
+    tapRow('Walk')
+    const nameField = screen.getByRole('textbox', { name: 'Activity name' })
+
+    fireEvent.change(nameField, { target: { value: 'Hike' } })
+    fireEvent.blur(nameField)
+
+    expect(screen.getByRole('heading', { name: 'Hike' })).toBeInTheDocument()
+    goBack('Activities')
+    expect(screen.getByRole('button', { name: 'Hike' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Walk' })).toBeNull()
+  })
+
+  test('renaming an activity commits on Enter', () => {
+    const { store } = renderEdit()
+    pressTab('Activities')
+    tapRow('Gym')
+    const nameField = screen.getByRole('textbox', { name: 'Activity name' })
+
+    fireEvent.change(nameField, { target: { value: 'Run' } })
+    fireEvent.keyDown(nameField, { key: 'Enter' })
+
+    expect(readSnapshot(store).activities.map(a => a.name)).toContain('Run')
+  })
+
+  test('the Committed checkbox in the activity view is unchecked for Gym and sets activity.committed when ticked', () => {
+    const { store } = renderEdit()
+    pressTab('Activities')
+    tapRow('Gym')
+    expect(screen.getByRole('checkbox', { name: 'Gym is committed' })).not.toBeChecked()
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Gym is committed' }))
 
@@ -414,25 +654,120 @@ describe('Slots', () => {
     expect(screen.getByRole('checkbox', { name: 'Gym is committed' })).toBeChecked()
   })
 
-  test('a committed activity shows its checkbox checked in every slot that lists it', () => {
+  test('Delete activity asks first, and Cancel keeps the activity', () => {
     const { store } = renderEdit()
-    const read = readSnapshot(store).activities.find(a => a.name === 'Read')
-    if (!read) throw new Error('no Read activity')
-    setActivityCommitted(store, read.id, true)
+    pressTab('Activities')
+    tapRow('Read')
 
-    tapRow('Post work')
-    expect(screen.getByRole('checkbox', { name: 'Read is committed' })).toBeChecked()
+    fireEvent.click(screen.getByRole('button', { name: 'Delete activity' }))
 
-    goBack('Slots')
-    tapRow('Post dinner')
-    expect(screen.getByRole('checkbox', { name: 'Read is committed' })).toBeChecked()
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: 'Delete "Read"?' })).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(readSnapshot(store).activities.map(a => a.name)).toContain('Read')
+    expect(screen.getByRole('heading', { name: 'Read' })).toBeInTheDocument()
   })
 
-  test('the activities have no explanatory line about committed activities', () => {
-    renderEdit()
-    tapRow('Post work')
+  test('confirming Delete activity returns to the list without it, and removes it from every slot', () => {
+    const { store } = renderEdit()
+    pressTab('Activities')
+    tapRow('Read')
 
-    expect(screen.queryByText("A committed activity uses up the slot for the day. Quick ones don't.")).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Delete activity' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete activity' }))
+
+    expect(readSnapshot(store).activities.map(a => a.name)).not.toContain('Read')
+    for (const name of ['Post work', 'Post dinner', 'Bedtime']) {
+      expect(listedNames(store, name)).not.toContain('Read')
+    }
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Read' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Read' })).toBeNull()
+    expect(screen.getByRole('tab', { name: 'Activities' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  test('an activity deleted elsewhere while its view is open returns to the Activities list', () => {
+    const { store } = renderEdit()
+    pressTab('Activities')
+    tapRow('Walk')
+    const walk = readSnapshot(store).activities.find(a => a.name === 'Walk')
+    if (!walk) throw new Error('no Walk activity')
+
+    act(() => deleteActivity(store, walk.id))
+
+    expect(screen.queryByRole('heading', { name: 'Walk' })).toBeNull()
+    expect(screen.getByRole('tab', { name: 'Activities' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('button', { name: 'Read' })).toBeInTheDocument()
+  })
+
+  test('the Activities tab has an empty search field above all seven rows', () => {
+    renderEdit()
+    pressTab('Activities')
+
+    const search = screen.getByRole('searchbox', { name: 'Search activities' })
+    expect(search).toHaveValue('')
+    expect(search).toHaveAttribute('placeholder', 'Search')
+    const firstRow = screen.getByRole('button', { name: 'Call family' })
+    expect(search.compareDocumentPosition(firstRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(activityRowNames()).toEqual(ALL_ACTIVITY_NAMES)
+  })
+
+  test('typing filters the rows by name without regard to case or surrounding spaces, keeping their order', () => {
+    renderEdit()
+    pressTab('Activities')
+    const search = screen.getByRole('searchbox', { name: 'Search activities' })
+
+    fireEvent.change(search, { target: { value: 'g' } })
+    expect(activityRowNames()).toEqual(['Guitar', 'Gym'])
+
+    fireEvent.change(search, { target: { value: 'GU' } })
+    expect(activityRowNames()).toEqual(['Guitar'])
+
+    fireEvent.change(search, { target: { value: '  read ' } })
+    expect(activityRowNames()).toEqual(['Read'])
+  })
+
+  test('a search with no match shows the no-match line in place of the rows, and clearing it brings them back', () => {
+    renderEdit()
+    pressTab('Activities')
+    const search = screen.getByRole('searchbox', { name: 'Search activities' })
+
+    fireEvent.change(search, { target: { value: 'zzz' } })
+    expect(screen.getByText('No activities match.')).toBeInTheDocument()
+    expect(activityRowNames()).toEqual([])
+    expect(screen.getByRole('textbox', { name: 'Activity name' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add activity' })).toBeInTheDocument()
+
+    fireEvent.change(search, { target: { value: '' } })
+    expect(screen.queryByText('No activities match.')).toBeNull()
+    expect(activityRowNames()).toEqual(ALL_ACTIVITY_NAMES)
+  })
+
+  test('opening a filtered activity and going back shows every row with an empty search field', () => {
+    renderEdit()
+    pressTab('Activities')
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search activities' }), { target: { value: 'GU' } })
+
+    tapRow('Guitar')
+    expect(screen.queryByRole('searchbox')).toBeNull()
+
+    goBack('Activities')
+    expect(screen.getByRole('searchbox', { name: 'Search activities' })).toHaveValue('')
+    expect(activityRowNames()).toEqual(ALL_ACTIVITY_NAMES)
+  })
+
+  test('switching to another tab and back clears the search', () => {
+    renderEdit()
+    pressTab('Activities')
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search activities' }), { target: { value: 'g' } })
+
+    pressTab('Labels')
+    pressTab('Activities')
+
+    expect(screen.getByRole('searchbox', { name: 'Search activities' })).toHaveValue('')
+    expect(activityRowNames()).toEqual(ALL_ACTIVITY_NAMES)
   })
 })
 

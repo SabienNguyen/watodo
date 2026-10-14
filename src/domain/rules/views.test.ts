@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import {
   dotStrip, entrySlotName, fullDayView, journalByDay, journalDay, nowView, progress, sectionActivities,
-  templatesUsingSection,
+  sectionsOfActivity, templatesUsingSection,
 } from './views'
 import type {
   Activity, DayRecord, JournalEntry, Listing, Section, Snapshot, Template, TemplateDraft, TemplateItem,
@@ -507,5 +507,17 @@ describe('templatesUsingSection', () => {
     expect(templatesUsingSection(snap, 'x').map(template => template.id)).toEqual(['a', 'c'])
     expect(templatesUsingSection(snap, 'y').map(template => template.id)).toEqual(['b'])
     expect(templatesUsingSection(snap, 'nowhere')).toEqual([])
+  })
+})
+
+describe('sectionsOfActivity', () => {
+  test('lists the slots that list the activity in section position order, whatever the array order', () => {
+    const snap = fixture({ sections: [...sections].reverse() })
+    expect(sectionsOfActivity(snap, 'read').map(section => section.name)).toEqual(['Post work', 'Post dinner', 'Bedtime'])
+  })
+
+  test('an activity no slot lists gives an empty array', () => {
+    const snap = fixture({ activities: [...activities, { id: 'yoga', name: 'Yoga', committed: false }] })
+    expect(sectionsOfActivity(snap, 'yoga')).toEqual([])
   })
 })

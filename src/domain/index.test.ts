@@ -7,6 +7,7 @@ test('re-exports the domain interface and the rules', () => {
     'setupState', 'setUpStarter', 'finishSetup',
     'logActivity', 'confirmDay', 'undoLast', 'goToSlot', 'deleteEntry', 'addPastEntry', 'editEntry', 'setDayNote',
     'addSection', 'renameSection', 'deleteSection', 'addActivityToSection', 'removeActivityFromSection', 'renameActivity',
+    'addActivity', 'setActivityInSection', 'deleteActivity',
     'addLabel', 'renameLabel', 'setLabelWeekdays', 'deleteLabel', 'saveTemplate',
     'setDefaultTemplate', 'deleteTemplate',
     'nowView', 'fullDayView', 'journalByDay', 'progress', 'dotStrip', 'guessTemplate', 'positionAt', 'spentSlots', 'lastDone',

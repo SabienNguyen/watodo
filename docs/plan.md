@@ -685,3 +685,24 @@ Implement the rules and domain contracts of Change 11, with tests.
 
 ### Task 25: committed activities on screen
 The kind switch in the slot editing view, the spend confirmation, spent slots and the day-done state on the Now screen, and the slow undo on the Now screen and in the Journal.
+
+---
+
+# Change 12: an Activities tab
+
+An activity is created once and attached to the slots it belongs in, from its own editing view.
+
+## Contracts
+```ts
+// src/domain/menu.ts (additions)
+export function addActivity(store: WatodoStore, name: string): Id;            // creates a quick activity in no slot; reuses an existing activity with the same name (case-insensitive)
+export function setActivityInSection(store: WatodoStore, activityId: Id, sectionId: Id, listed: boolean): void; // true lists it at the end of that slot (no-op if already listed); false removes it
+export function deleteActivity(store: WatodoStore, activityId: Id): void;     // removes the activity and all its listings; journal entries are kept
+
+// src/domain/rules/views.ts (addition)
+export function sectionsOfActivity(snap: Snapshot, activityId: Id): Section[]; // the slots that list it, by section position
+```
+Existing functions are unchanged.
+
+### Task 26: the Activities tab
+Implement the contracts above with tests, add the `Activities` tab and the activity editing view, and simplify the slot editing view.

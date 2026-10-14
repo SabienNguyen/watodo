@@ -3,7 +3,7 @@ import { guessTemplate, type TemplateGuess } from './guess'
 import { itemsOf, positionAt, slotDisplayNames, slotsOf, spentSlots, type Position } from './currentSlot'
 import { lastDone } from './lastDone'
 import type {
-  Activity, DayKey, DayRecord, Id, JournalEntry, Snapshot, Template, TemplateItem,
+  Activity, DayKey, DayRecord, Id, JournalEntry, Section, Snapshot, Template, TemplateItem,
 } from './types'
 
 export interface NowView {
@@ -50,6 +50,16 @@ export function sectionActivities(snap: Snapshot, sectionId: Id): Activity[] {
       const activity = snap.activities.find(a => a.id === listing.activityId)
       return activity ? [activity] : []
     })
+}
+
+/** The slots that list an activity, in section position order. */
+export function sectionsOfActivity(snap: Snapshot, activityId: Id): Section[] {
+  const listed = new Set(
+    snap.listings.filter(listing => listing.activityId === activityId).map(listing => listing.sectionId),
+  )
+  return snap.sections
+    .filter(section => listed.has(section.id))
+    .sort((a, b) => a.position - b.position)
 }
 
 function dayRecordFor(snap: Snapshot, day: DayKey): DayRecord | undefined {

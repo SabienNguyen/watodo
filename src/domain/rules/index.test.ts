@@ -7,7 +7,7 @@ test('re-exports every rule function and constant', () => {
     'guessTemplate',
     'STAY_MS', 'itemsOf', 'slotsOf', 'spentSlots', 'positionAt',
     'lastDone', 'nowView', 'fullDayView',
-    'journalByDay', 'progress', 'dotStrip', 'templatesUsingSection',
+    'journalByDay', 'progress', 'dotStrip', 'templatesUsingSection', 'sectionsOfActivity',
     'STARTERS', 'SUGGESTED_ACTIVITIES', 'draftFromStarter', 'draftFromTemplate', 'blankDraft', 'moveStep',
   ]
   for (const name of names) {

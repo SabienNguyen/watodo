@@ -1,7 +1,7 @@
 import type { Id } from './rules';
 import type { WatodoStore } from './store';
 import {
-  ensureActivity, ensureListing, listingId, newId, nextPosition, TABLE,
+  ensureActivity, ensureListing, findIdByName, listingId, newId, nextPosition, TABLE,
 } from './schema';
 
 export function addSection(store: WatodoStore, name: string): Id {
@@ -34,10 +34,15 @@ export function deleteSection(store: WatodoStore, id: Id): void {
   });
 }
 
-/** Reuses an activity with the same name (case-insensitive). Listing it twice adds nothing. */
-export function addActivityToSection(store: WatodoStore, sectionId: Id, name: string): Id {
+/**
+ * Reuses an activity with the same name (case-insensitive), and leaves its committed setting as it is.
+ * A new activity is quick unless `options.committed` is true. Listing it twice adds nothing.
+ */
+export function addActivityToSection(store: WatodoStore, sectionId: Id, name: string, options?: { committed?: boolean }): Id {
   return store.transaction(() => {
+    const isNew = findIdByName(store, TABLE.activities, name) === undefined;
     const activityId = ensureActivity(store, name);
+    if (isNew && (options?.committed ?? false)) setActivityCommitted(store, activityId, true);
     ensureListing(store, sectionId, activityId);
     return activityId;
   });
@@ -45,6 +50,31 @@ export function addActivityToSection(store: WatodoStore, sectionId: Id, name: st
 
 export function removeActivityFromSection(store: WatodoStore, sectionId: Id, activityId: Id): void {
   store.delRow(TABLE.listings, listingId(sectionId, activityId));
+}
+
+/** Creates a quick activity in no slot, or reuses the activity with this name (case-insensitive). A blank name creates nothing and returns ''. */
+export function addActivity(store: WatodoStore, name: string): Id {
+  if (name.trim() === '') return '';
+  return store.transaction(() => ensureActivity(store, name));
+}
+
+/** Lists the activity at the end of the slot, or removes its listing there. Does nothing for an unknown activity or slot. */
+export function setActivityInSection(store: WatodoStore, activityId: Id, sectionId: Id, listed: boolean): void {
+  if (!store.hasRow(TABLE.activities, activityId) || !store.hasRow(TABLE.sections, sectionId)) return;
+  if (listed) ensureListing(store, sectionId, activityId);
+  else store.delRow(TABLE.listings, listingId(sectionId, activityId));
+}
+
+/** Also removes the activity's listings in every slot. Journal entries are kept. */
+export function deleteActivity(store: WatodoStore, activityId: Id): void {
+  store.transaction(() => {
+    for (const listing of store.getRowIds(TABLE.listings)) {
+      if (store.getCell(TABLE.listings, listing, 'activityId') === activityId) {
+        store.delRow(TABLE.listings, listing);
+      }
+    }
+    store.delRow(TABLE.activities, activityId);
+  });
 }
 
 export function renameActivity(store: WatodoStore, id: Id, name: string): void {
