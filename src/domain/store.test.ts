@@ -255,3 +255,19 @@ test('an activity reads as temporary only when its temporary cell is true', () =
     expect(activities.find(activity => activity.id === id), id).not.toHaveProperty('temporary');
   }
 });
+
+test('a journal row round-trips its throughItemId, and a row without one reads back without it', () => {
+  const { store, activityId, sectionId, itemId } = basicDay();
+  store.setRow('journal', 'span', {
+    activityId: activityId('Gym'), sectionId: sectionId('Post work'), itemId: itemId('Post work'),
+    loggedAt: at(17, 45).getTime(), committed: true, throughItemId: itemId('Bedtime'),
+  });
+  store.setRow('journal', 'plain', {
+    activityId: activityId('Gym'), sectionId: sectionId('Post work'), itemId: itemId('Post work'),
+    loggedAt: at(17, 50).getTime(), committed: true,
+  });
+
+  const journal = readSnapshot(store).journal;
+  expect(journal.find(entry => entry.id === 'span')).toMatchObject({ throughItemId: itemId('Bedtime') });
+  expect(journal.find(entry => entry.id === 'plain')).not.toHaveProperty('throughItemId');
+});

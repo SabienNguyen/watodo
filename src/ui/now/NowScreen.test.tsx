@@ -79,6 +79,14 @@ function weekendConfirmedStore(): WatodoStore {
   return store
 }
 
+/** The basic day confirmed today, with Gym committed and nothing logged. */
+function gymCommittedStore(): WatodoStore {
+  const store = finishedStore()
+  setActivityCommitted(store, activityId(store, 'Gym'), true)
+  confirmDay(store, MONDAY_1745, basicDayId(store))
+  return store
+}
+
 describe('NowScreen', () => {
   // Sonner keeps its toast list at module level, so clear it between tests.
   afterEach(() => {
@@ -275,14 +283,6 @@ describe('committed activities', () => {
   function pressSpentPostWork() {
     now = new Date(2026, 9, 12, 17, 46)
     fireEvent.click(slotButton('Post work, spent on Gym'))
-  }
-
-  /** The basic day confirmed today, with Gym committed and nothing logged. */
-  function gymCommittedStore(): WatodoStore {
-    const store = finishedStore()
-    setActivityCommitted(store, activityId(store, 'Gym'), true)
-    confirmDay(store, MONDAY_1745, basicDayId(store))
-    return store
   }
 
   test('Gym shows a committed badge, and Walk does not', () => {
@@ -570,6 +570,92 @@ describe('what is left in a slot, and adding from Now', () => {
   })
 })
 
+describe('one activity across several slots', () => {
+  // The clock moves on in the test that presses a spent slot, since a press counts only when it is later than the log.
+  let now: Date
+  const movingClock: Clock = () => now
+
+  beforeEach(() => {
+    now = MONDAY_1745_DATE
+  })
+
+  afterEach(() => {
+    toast.dismiss()
+    vi.useRealTimers()
+  })
+
+  /** Taps Gym, chooses the named slot in its Through row, and confirms the spend. */
+  function spendGymThrough(slot: string) {
+    fireEvent.click(activityButton('Gym'))
+    const dialog = within(screen.getByRole('dialog'))
+    fireEvent.click(dialog.getByRole('button', { name: slot }))
+    fireEvent.click(dialog.getByRole('button', { name: 'Spend it' }))
+  }
+
+  function slotItemId(store: WatodoStore, name: string): Id {
+    const item = readSnapshot(store).items.find(candidate => candidate.name === name)
+    if (item === undefined) throw new Error(`no slot ${name}`)
+    return item.id
+  }
+
+  test('choosing Post dinner spends Post work and Post dinner, and the heading moves to Bedtime', async () => {
+    const { store } = renderNow({ store: gymCommittedStore(), clock: movingClock })
+
+    spendGymThrough('Post dinner')
+
+    const snap = readSnapshot(store)
+    expect(snap.journal).toHaveLength(1)
+    expect(snap.journal[0].throughItemId).toBe(slotItemId(store, 'Post dinner'))
+    expect(slotButton('Post work, spent on Gym')).toBeInTheDocument()
+    expect(slotButton('Post dinner, spent on Gym')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Bedtime' })).toBeInTheDocument()
+    expect(slotButton('Bedtime')).toHaveAttribute('aria-pressed', 'true')
+    expect(await screen.findByText('Spent Post work – Post dinner on Gym')).toBeInTheDocument()
+  })
+
+  test('on an unconfirmed day the span survives the day picker', async () => {
+    const store = finishedStore()
+    setActivityCommitted(store, activityId(store, 'Gym'), true)
+    renderNow({ store, clock: MONDAY_1745 })
+
+    spendGymThrough('Post dinner')
+
+    expect(within(screen.getByRole('dialog')).getByText('Which kind of day is today?')).toBeInTheDocument()
+    expect(readSnapshot(store).journal).toHaveLength(0)
+
+    confirmBasicDay()
+
+    const snap = readSnapshot(store)
+    expect(snap.journal).toHaveLength(1)
+    expect(snap.journal[0].throughItemId).toBe(slotItemId(store, 'Post dinner'))
+    expect(slotButton('Post dinner, spent on Gym')).toBeInTheDocument()
+    expect(await screen.findByText('Spent Post work – Post dinner on Gym')).toBeInTheDocument()
+  })
+
+  test('Undo from a covered slot opens the slow dialog, and after the countdown reopens Post work and Post dinner', () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    const { store } = renderNow({ store: gymCommittedStore(), clock: movingClock })
+    spendGymThrough('Post dinner')
+
+    now = new Date(2026, 9, 12, 17, 46)
+    fireEvent.click(slotButton('Post dinner, spent on Gym'))
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: 'Undo Gym?' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Undo in 5' })).toBeDisabled()
+
+    act(() => { vi.advanceTimersByTime(5000) })
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Undo' }))
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(readSnapshot(store).journal).toHaveLength(0)
+    expect(slotButton('Post work')).toHaveAttribute('aria-pressed', 'false')
+    expect(slotButton('Post dinner')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('button', { name: /spent on Gym/ })).toBeNull()
+  })
+})
+
 describe('temporary activities from the add field', () => {
   // The clock moves on in these tests; the screen re-reads it when the timers advance (every 30 seconds).
   let now: Date
@@ -610,6 +696,21 @@ describe('temporary activities from the add field', () => {
 
     moveTo(new Date(2026, 9, 13, 4, 0))
     expect(screen.queryByRole('button', { name: /Swim/ })).toBeNull()
+  })
+
+  test('choosing how long after typing a name does not add it until Add is pressed', () => {
+    renderNow({ clock: movingClock })
+    fireEvent.click(screen.getByRole('button', { name: 'Add activity' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'New activity in Post work' }), { target: { value: 'Swim' } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Until' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Keep' }))
+    expect(screen.queryByRole('button', { name: /Swim/ })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+    expect(activityButton('Swim')).toBeInTheDocument()
   })
 
   test('Until defaults to the coming Sunday, 18 Oct, and its earliest day is today', () => {

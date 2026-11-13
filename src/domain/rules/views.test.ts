@@ -808,3 +808,129 @@ describe('deleted names in the Journal', () => {
     expect(entrySlotName(snap, entry('e1', 'gym', 'postWork', at(2026, OCT, 12, 18, 0)))).toBe('Post work')
   })
 })
+
+function spanningEntry(
+  id: string, activityId: string, sectionId: string, loggedAt: Date, itemId: string, throughItemId: string,
+): JournalEntry {
+  return { ...entry(id, activityId, sectionId, loggedAt, itemId), committed: true, throughItemId }
+}
+
+const sleep = fixed('sleep', 6, 'Sleep')
+
+describe('nowView spanChoices', () => {
+  test('on an open slot, lists it and each following slot up to the end of the template', () => {
+    const view = nowView(fixture(), at(2026, OCT, 12, 18, 0))
+    expect(view.spanChoices.map(choice => [choice.item.id, choice.displayName])).toEqual([
+      ['postWork', 'Post work'],
+      ['postDinner', 'Post dinner'],
+      ['bedtime', 'Bedtime'],
+    ])
+  })
+
+  test('stops before the first spent slot', () => {
+    const journal = [{ ...entry('c1', 'read', 'bedtime', at(2026, OCT, 12, 16, 0), 'bedtime'), committed: true }]
+    const days: DayRecord[] = [{ day: '2026-10-12', chosenItemId: 'postWork', chosenAt: at(2026, OCT, 12, 17, 0).getTime() }]
+    const view = nowView(fixture({ journal, days }), at(2026, OCT, 12, 18, 0))
+    expect(view.position?.item.id).toBe('postWork')
+    expect(view.spanChoices.map(choice => choice.item.id)).toEqual(['postWork', 'postDinner'])
+  })
+
+  test('is empty on a spent slot', () => {
+    const journal = [{ ...entry('c1', 'read', 'bedtime', at(2026, OCT, 12, 16, 0), 'bedtime'), committed: true }]
+    const days: DayRecord[] = [{ day: '2026-10-12', chosenItemId: 'bedtime', chosenAt: at(2026, OCT, 12, 17, 0).getTime() }]
+    const view = nowView(fixture({ journal, days }), at(2026, OCT, 12, 18, 0))
+    expect(view.position?.spentBy).not.toBeNull()
+    expect(view.spanChoices).toEqual([])
+  })
+
+  test('is empty with no position: no template, or no slots', () => {
+    expect(nowView(fixture({ labels: [], templates: [], defaultTemplateId: null }), at(2026, OCT, 12, 18, 0)).spanChoices)
+      .toEqual([])
+    expect(nowView(fixture({ items: [wake, work, dinner] }), at(2026, OCT, 12, 18, 0)).spanChoices).toEqual([])
+  })
+})
+
+describe('fullDayView insideSpan', () => {
+  test('marks the later slots and the fixed steps between them, not the first slot nor items after the span', () => {
+    const snap = fixture({
+      items: [...basicItems, sleep, nightSnack],
+      journal: [spanningEntry('c1', 'gym', 'postWork', at(2026, OCT, 12, 17, 0), 'postWork', 'postDinner')],
+    })
+    const view = fullDayView(snap, at(2026, OCT, 12, 18, 0))
+    expect(view.items.map(i => [i.item.id, i.insideSpan])).toEqual([
+      ['wake', false],
+      ['work', false],
+      ['postWork', false],
+      ['dinner', true],
+      ['postDinner', true],
+      ['bedtime', false],
+      ['sleep', false],
+    ])
+  })
+
+  test('the spanning entry is listed under its first slot only', () => {
+    const snap = fixture({
+      journal: [spanningEntry('c1', 'gym', 'postWork', at(2026, OCT, 12, 17, 0), 'postWork', 'postDinner')],
+    })
+    const view = fullDayView(snap, at(2026, OCT, 12, 18, 0))
+    const logged = view.items.map(i => [i.item.id, i.logged.map(l => l.entry.id)])
+    expect(logged.filter(([, ids]) => ids.length > 0)).toEqual([['postWork', ['c1']]])
+  })
+
+  test('a quick entry, or a span that is not longer than its own slot, marks nothing', () => {
+    const quick = { ...entry('q1', 'gym', 'postWork', at(2026, OCT, 12, 17, 0), 'postWork'), throughItemId: 'bedtime' }
+    const view = fullDayView(fixture({ journal: [quick] }), at(2026, OCT, 12, 18, 0))
+    expect(view.items.some(i => i.insideSpan)).toBe(false)
+  })
+
+  test('on the Weekend, a span over a repeated slot covers the fixed steps between', () => {
+    const snap = readSnapshot(weekendStore())
+    const [firstFreeTime] = freeTimes(snap)
+    const postDinnerItem = snap.items.find(item => item.name === 'Post dinner' && item.templateId === firstFreeTime.templateId)
+    if (postDinnerItem === undefined) throw new Error('no Post dinner item')
+    const withSpan = {
+      ...snap,
+      journal: [spanningEntry('c1', 'hike', sectionIdNamed(snap, 'Free time'), at(2026, OCT, 12, 17, 0), firstFreeTime.id, postDinnerItem.id)],
+    }
+    const view = fullDayView(withSpan, at(2026, OCT, 12, 18, 0))
+    expect(view.items.map(i => [i.displayName, i.insideSpan])).toEqual([
+      ['Wake up', false], ['Brush teeth', false], ['Change clothes', false], ['Free time #1', false],
+      ['Lunch', true], ['Free time #2', true], ['Dinner', true], ['Post dinner', true],
+      ['Bedtime', false], ['Brush teeth', false], ['Sleep', false],
+    ])
+  })
+})
+
+describe('entrySlotName for a span', () => {
+  test('a span over two slots is named first – last', () => {
+    const snap = fixture()
+    expect(entrySlotName(snap, spanningEntry('e1', 'gym', 'postWork', at(2026, OCT, 12, 18, 0), 'postWork', 'postDinner')))
+      .toBe('Post work – Post dinner')
+  })
+
+  test('a span over the Weekend repeated slot uses the numbered names', () => {
+    const snap = readSnapshot(weekendStore())
+    const [firstFreeTime] = freeTimes(snap)
+    const postDinnerItem = snap.items.find(item => item.name === 'Post dinner' && item.templateId === firstFreeTime.templateId)
+    if (postDinnerItem === undefined) throw new Error('no Post dinner item')
+    const logged = spanningEntry('e1', 'hike', sectionIdNamed(snap, 'Free time'), at(2026, OCT, 12, 18, 0), firstFreeTime.id, postDinnerItem.id)
+    expect(entrySlotName(snap, logged)).toBe('Free time #1 – Post dinner')
+  })
+
+  test('a span that is just its own slot keeps the plain name', () => {
+    const snap = fixture()
+    expect(entrySlotName(snap, spanningEntry('e1', 'gym', 'postWork', at(2026, OCT, 12, 18, 0), 'postWork', 'postWork')))
+      .toBe('Post work')
+  })
+})
+
+describe('progress with a span', () => {
+  test('a spanning entry counts once, under its own activity and section', () => {
+    const snap = fixture({
+      journal: [spanningEntry('c1', 'gym', 'postWork', at(2026, OCT, 12, 18, 0), 'postWork', 'bedtime')],
+    })
+    const view = progress(snap, '2026-10-12', '2026-10-12')
+    expect(view.byActivity).toEqual([{ activityId: 'gym', count: 1 }])
+    expect(view.bySection).toEqual([{ sectionId: 'postWork', count: 1 }])
+  })
+})

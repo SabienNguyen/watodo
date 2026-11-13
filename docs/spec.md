@@ -32,6 +32,16 @@ Some things you do use up the slot they are done in; others do not.
 - Entries added by hand in the Journal never spend a slot.
 - If only quick activities are logged in a slot, it moves on as before: by tapping another slot, or an hour after the last log.
 
+## One activity across several slots
+
+Some things, like dinner out in the city, take up more than one slot. A committed activity can spend the current slot and the slots right after it.
+
+- The spend question (`Spend {slot} on {activity}?`) has a `Through` row of buttons: the current slot, then each following slot up to the first one that is already spent. The current slot is chosen by default, so an ordinary spend is unchanged. Choosing a later slot spends every slot from the current one through it. The question then reads `Spend {first slot} – {last slot} on {activity}?`. With only one slot to offer, the row is not shown.
+- Every slot it covers is marked spent by that activity, and the Now screen moves to the first open slot after them.
+- The Journal names the span (`Post work – Post dinner`). In the full day the activity is one step that replaces the slots it covered and the fixed steps between them.
+- Undo (the slow, five-second one) reopens every slot it covered.
+- Only committed activities can cover several slots. The slots are always consecutive.
+
 ## Resting, and what is left in a slot
 
 - **Resting**: an activity can have a number of rest days, set in its editing view (`Rest days`; blank means none). After it is logged it is hidden from the Now screen until that many days have passed: an activity with 30 rest days logged on 1 October comes back on 31 October. Logging it early anyway is done by adding it in the Journal.

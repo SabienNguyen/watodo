@@ -198,6 +198,7 @@ export interface JournalFields {
   loggedAt: number;
   itemId?: Id;
   committed?: boolean;                 // only `true` is written: a quick entry has no committed cell
+  throughItemId?: Id;                  // written only with committed: the last slot the entry spends
   note?: string;
   durationMinutes?: number;
 }
@@ -211,6 +212,7 @@ export function writeJournalRow(store: MergeableStore, fields: JournalFields): I
   };
   if (fields.itemId !== undefined) row.itemId = fields.itemId;
   if (fields.committed === true) row.committed = true;
+  if (fields.committed === true && fields.throughItemId !== undefined) row.throughItemId = fields.throughItemId;
   if (fields.note) row.note = fields.note;
   if (fields.durationMinutes !== undefined) row.durationMinutes = fields.durationMinutes;
   store.setRow(TABLE.journal, id, row);

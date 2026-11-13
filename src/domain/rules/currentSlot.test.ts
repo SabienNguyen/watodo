@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
-  STAY_MS, entriesBySlot, itemsOf, positionAt, slotDisplayNames, slotOf, slotsOf, spentSlots,
+  STAY_MS, entriesBySlot, itemsOf, positionAt, slotDisplayNames, slotOf, slotsOf, spanOf, spentSlots,
 } from './currentSlot'
 import type { DayRecord, JournalEntry, Snapshot, TemplateItem } from './types'
 
@@ -395,5 +395,74 @@ describe('entriesBySlot', () => {
 
   test('no entries give an empty map', () => {
     expect(entriesBySlot(items, []).size).toBe(0)
+  })
+})
+
+function spanning(id: string, sectionId: string, loggedAt: Date, itemId: string, throughItemId: string): JournalEntry {
+  return { ...committed(id, sectionId, loggedAt, itemId), throughItemId }
+}
+
+describe('spentSlots with a span', () => {
+  test('a committed entry with throughItemId spends every slot from its own through that one', () => {
+    const spent = spentSlots(basic, [spanning('c1', 'postWork', minutesAgo(10), 'postWork', 'bedtime')])
+    expect([...spent.keys()]).toEqual(['postWork', 'postDinner', 'bedtime'])
+    expect(['postWork', 'postDinner', 'bedtime'].map(id => spent.get(id)?.id)).toEqual(['c1', 'c1', 'c1'])
+  })
+
+  test('a through that is earlier than the own slot, the own slot itself, or unknown spends just the own slot', () => {
+    const earlier = spentSlots(basic, [spanning('c1', 'postDinner', minutesAgo(10), 'postDinner', 'postWork')])
+    const same = spentSlots(basic, [spanning('c2', 'postDinner', minutesAgo(10), 'postDinner', 'postDinner')])
+    const unknown = spentSlots(basic, [spanning('c3', 'postDinner', minutesAgo(10), 'postDinner', 'nowhere')])
+    const fixedStep = spentSlots(basic, [spanning('c4', 'postDinner', minutesAgo(10), 'postDinner', 'dinner')])
+    for (const spent of [earlier, same, unknown, fixedStep]) {
+      expect([...spent.keys()]).toEqual(['postDinner'])
+    }
+  })
+
+  test('a quick entry with throughItemId spends just its own slot', () => {
+    const quick = { ...entry('q1', 'postWork', minutesAgo(10), 'postWork'), throughItemId: 'bedtime' }
+    expect([...spentSlots(basic, [quick]).keys()]).toEqual([])
+  })
+
+  test('where spans overlap, the latest entry is reported on each slot', () => {
+    const spent = spentSlots(basic, [
+      spanning('early', 'postWork', minutesAgo(30), 'postWork', 'bedtime'),
+      spanning('late', 'postDinner', minutesAgo(5), 'postDinner', 'bedtime'),
+    ])
+    expect(spent.get('postWork')?.id).toBe('early')
+    expect(spent.get('postDinner')?.id).toBe('late')
+    expect(spent.get('bedtime')?.id).toBe('late')
+  })
+})
+
+describe('spanOf', () => {
+  test('a quick entry spends one slot: its own', () => {
+    expect(spanOf(basic, entry('q1', 'postWork', minutesAgo(10), 'postWork')).map(i => i.id)).toEqual(['postWork'])
+  })
+
+  test('a plain committed entry spends one slot: its own', () => {
+    expect(spanOf(basic, committed('c1', 'postWork', minutesAgo(10), 'postWork')).map(i => i.id)).toEqual(['postWork'])
+  })
+
+  test('a spanning entry gives its slots in order, from its own through the through item', () => {
+    expect(spanOf(basic, spanning('c1', 'postWork', minutesAgo(10), 'postWork', 'bedtime')).map(i => i.id))
+      .toEqual(['postWork', 'postDinner', 'bedtime'])
+  })
+
+  test('an entry that maps to no slot gives an empty span', () => {
+    expect(spanOf(basic, committed('c1', 'nowhere', minutesAgo(10), 'deletedItem'))).toEqual([])
+  })
+})
+
+describe('positionAt after a span', () => {
+  test('a spanning committed log lands on the first open slot after the span', () => {
+    const journal = [spanning('c1', 'postWork', minutesAgo(10), 'postWork', 'postDinner')]
+    const position = positionAt(basic, journal, undefined, NOW)
+    expect(position).toEqual({ item: bedtime, reason: 'advanced', spentBy: null })
+  })
+
+  test('a span through the last slot leaves no position', () => {
+    const journal = [spanning('c1', 'postWork', minutesAgo(10), 'postWork', 'bedtime')]
+    expect(positionAt(basic, journal, undefined, NOW)).toBeNull()
   })
 })

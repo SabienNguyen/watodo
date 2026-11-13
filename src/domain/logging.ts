@@ -5,7 +5,7 @@ import { TABLE, writeJournalRow } from './schema';
 
 const ONE_MINUTE_MS = 60 * 1000;
 
-export interface PendingLog { activityId: Id; sectionId: Id; itemId: Id }
+export interface PendingLog { activityId: Id; sectionId: Id; itemId: Id; throughItemId?: Id }
 
 export type LogResult =
   | { status: 'logged'; entryId: Id }
@@ -17,7 +17,13 @@ function isCommitted(store: WatodoStore, activityId: Id): boolean {
   return store.getCell(TABLE.activities, activityId, 'committed') === true;
 }
 
-export function logActivity(store: WatodoStore, clock: Clock, activityId: Id): LogResult {
+/**
+ * Logs the activity in the current slot. `throughItemId` extends a committed log over the following slots;
+ * it is kept only for a committed activity and a choice in nowView.spanChoices other than the position itself.
+ */
+export function logActivity(
+  store: WatodoStore, clock: Clock, activityId: Id, options: { throughItemId?: Id } = {},
+): LogResult {
   const now = clock();
   const view = nowView(readSnapshot(store), now);
   const position = view.position;
@@ -27,15 +33,25 @@ export function logActivity(store: WatodoStore, clock: Clock, activityId: Id): L
   const listed = view.activities.some(({ activity }) => activity.id === activityId);
   if (sectionId === undefined || !listed) return { status: 'not-available' };
 
+  const committed = isCommitted(store, activityId);
+  const throughItemId = committed && options.throughItemId !== undefined
+    && options.throughItemId !== itemId
+    && view.spanChoices.some(choice => choice.item.id === options.throughItemId)
+    ? options.throughItemId
+    : undefined;
+
   if (!view.guess.confirmed) {
     return {
       status: 'needs-template',
-      pending: { activityId, sectionId, itemId },
+      pending: throughItemId === undefined
+        ? { activityId, sectionId, itemId }
+        : { activityId, sectionId, itemId, throughItemId },
       guessTemplateId: view.template.id,
     };
   }
-  const committed = isCommitted(store, activityId);
-  const entryId = writeJournalRow(store, { activityId, sectionId, itemId, loggedAt: now.getTime(), committed });
+  const entryId = writeJournalRow(store, {
+    activityId, sectionId, itemId, loggedAt: now.getTime(), committed, throughItemId,
+  });
   return { status: 'logged', entryId };
 }
 
@@ -55,12 +71,21 @@ export function confirmDay(store: WatodoStore, clock: Clock, templateId: Id, pen
     }
 
     if (pending === undefined) return null;
+    const committed = isCommitted(store, pending.activityId);
+    // A span runs through a slot of the template confirmed here; a through item from another template is dropped.
+    const throughItemId = committed
+      && pending.throughItemId !== undefined
+      && pending.throughItemId !== pending.itemId
+      && store.getCell(TABLE.items, pending.throughItemId, 'templateId') === templateId
+      ? pending.throughItemId
+      : undefined;
     return writeJournalRow(store, {
       activityId: pending.activityId,
       sectionId: pending.sectionId,
       itemId: pending.itemId,
       loggedAt: now.getTime(),
-      committed: isCommitted(store, pending.activityId),
+      committed,
+      throughItemId,
     });
   });
 }

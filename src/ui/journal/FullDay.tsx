@@ -14,7 +14,7 @@ export function FullDay() {
 
   return (
     <ol className="flex list-none flex-col gap-3">
-      {view.items.flatMap(({ item, displayName, current, activities, logged }) => {
+      {view.items.filter(({ insideSpan }) => !insideSpan).flatMap(({ item, displayName, current, activities, logged }) => {
         // A slot with entries today is replaced by them, one step per entry.
         if (logged.length > 0) {
           return logged.map(({ entry, activityName }) => (

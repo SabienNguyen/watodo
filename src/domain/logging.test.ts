@@ -385,3 +385,121 @@ describe('committed activities', () => {
     expect(nowView(readSnapshot(store), at(17, 50)).slots[0].spentBy).toBeNull();
   });
 });
+
+describe('spans', () => {
+  function committedGym() {
+    const fixture = basicDay();
+    setActivityCommitted(fixture.store, fixture.activityId('Gym'), true);
+    return fixture;
+  }
+
+  test('a committed activity with a choice further on writes throughItemId, and spends every slot it covers', () => {
+    const { store, templateId, activityId, itemId } = committedGym();
+    const clock = () => at(17, 45);
+    confirmDay(store, clock, templateId);
+
+    const entryId = loggedIdOf(logActivity(store, clock, activityId('Gym'), { throughItemId: itemId('Bedtime') }));
+
+    expect(readSnapshot(store).journal).toEqual([
+      expect.objectContaining({
+        id: entryId, committed: true, itemId: itemId('Post work'), throughItemId: itemId('Bedtime'),
+      }),
+    ]);
+    expect(nowView(readSnapshot(store), at(17, 46)).slots.map(slot => slot.spentBy !== null)).toEqual([true, true, true]);
+  });
+
+  test('a quick activity drops the through item: its entry has none', () => {
+    const { store, templateId, activityId, itemId } = basicDay();
+    const clock = () => at(17, 45);
+    confirmDay(store, clock, templateId);
+
+    const entryId = loggedIdOf(logActivity(store, clock, activityId('Walk'), { throughItemId: itemId('Bedtime') }));
+
+    expect(readSnapshot(store).journal).toEqual([expect.objectContaining({ id: entryId })]);
+    expect(readSnapshot(store).journal[0]).not.toHaveProperty('throughItemId');
+  });
+
+  test('a through item that is not an open choice is dropped, and the entry is a plain spend', () => {
+    const clock = () => at(17, 45);
+    const notAChoice = (pick: (fixture: ReturnType<typeof basicDay>) => string) => {
+      const fixture = committedGym();
+      confirmDay(fixture.store, clock, fixture.templateId);
+      loggedIdOf(logActivity(fixture.store, clock, fixture.activityId('Gym'), { throughItemId: pick(fixture) }));
+      return readSnapshot(fixture.store).journal[0];
+    };
+
+    expect(notAChoice(f => f.itemId('Dinner'))).not.toHaveProperty('throughItemId');
+    expect(notAChoice(f => f.itemId('Post work'))).not.toHaveProperty('throughItemId');
+    expect(notAChoice(f => f.itemId('Post work'))).toMatchObject({ committed: true });
+  });
+
+  test('a through item past a spent slot is dropped, since the choices stop before it', () => {
+    const { store, templateId, activityId, itemId } = basicDay();
+    setActivityCommitted(store, activityId('Guitar'), true);
+    setActivityCommitted(store, activityId('Gym'), true);
+    let now = at(19, 45);
+    const clock = () => now;
+    confirmDay(store, clock, templateId);
+    goToSlot(store, clock, itemId('Post dinner'));
+    loggedIdOf(logActivity(store, clock, activityId('Guitar')));
+
+    now = at(19, 50);
+    goToSlot(store, clock, itemId('Post work'));
+    const entryId = loggedIdOf(logActivity(store, clock, activityId('Gym'), { throughItemId: itemId('Bedtime') }));
+
+    expect(readSnapshot(store).journal.find(entry => entry.id === entryId)).not.toHaveProperty('throughItemId');
+  });
+
+  test('a span logged on a day not yet confirmed keeps its through item in the pending log', () => {
+    const { store, templateId, activityId, itemId } = committedGym();
+    const clock = () => at(17, 45);
+
+    const first = logActivity(store, clock, activityId('Gym'), { throughItemId: itemId('Bedtime') });
+    expect(pendingOf(first)).toEqual({
+      activityId: activityId('Gym'), sectionId: expect.any(String), itemId: itemId('Post work'), throughItemId: itemId('Bedtime'),
+    });
+
+    const entryId = confirmDay(store, clock, templateId, pendingOf(first));
+    expect(readSnapshot(store).journal).toEqual([
+      expect.objectContaining({ id: entryId, committed: true, throughItemId: itemId('Bedtime') }),
+    ]);
+  });
+
+  test('confirming a different template drops the pending through item', () => {
+    const { store, labelId, activityId, itemId } = committedGym();
+    const clock = () => at(17, 45);
+    const first = logActivity(store, clock, activityId('Gym'), { throughItemId: itemId('Bedtime') });
+    const short = saveTemplate(store, { name: 'Short', label: { id: labelId }, steps: [] });
+
+    const entryId = confirmDay(store, clock, short, pendingOf(first));
+
+    const entry = readSnapshot(store).journal.find(candidate => candidate.id === entryId);
+    expect(entry).toMatchObject({ committed: true, itemId: itemId('Post work') });
+    expect(entry).not.toHaveProperty('throughItemId');
+  });
+
+  test('deleting a spanning entry reopens every slot it covered', () => {
+    const { store, templateId, activityId, itemId } = committedGym();
+    const clock = () => at(17, 45);
+    confirmDay(store, clock, templateId);
+    const entryId = loggedIdOf(logActivity(store, clock, activityId('Gym'), { throughItemId: itemId('Bedtime') }));
+    expect(nowView(readSnapshot(store), at(17, 46)).dayDone).toBe(true);
+
+    deleteEntry(store, entryId);
+
+    const view = nowView(readSnapshot(store), at(17, 46));
+    expect(view.slots.map(slot => slot.spentBy)).toEqual([null, null, null]);
+    expect(view.positionName).toBe('Post work');
+  });
+
+  test('undo reopens every slot a spanning entry covered', () => {
+    const { store, templateId, activityId, itemId } = committedGym();
+    const clock = () => at(17, 45);
+    confirmDay(store, clock, templateId);
+    logActivity(store, clock, activityId('Gym'), { throughItemId: itemId('Bedtime') });
+
+    expect(undoLast(store, clock)).not.toBeNull();
+
+    expect(nowView(readSnapshot(store), at(17, 46)).slots.map(slot => slot.spentBy)).toEqual([null, null, null]);
+  });
+});

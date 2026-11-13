@@ -134,12 +134,14 @@ const readJournalEntry: RowReader<JournalEntry> = (id, row) => {
   if (activityId === undefined || sectionId === undefined || loggedAt === undefined) return undefined;
   const itemId = text(row, 'itemId');
   const committed = flag(row, 'committed');
+  const throughItemId = text(row, 'throughItemId');
   const note = text(row, 'note');
   const durationMinutes = num(row, 'durationMinutes');
   return {
     id, activityId, sectionId, loggedAt,
     ...(itemId === undefined ? {} : { itemId }),
     ...(committed === undefined ? {} : { committed }),
+    ...(throughItemId === undefined ? {} : { throughItemId }),
     ...(note === undefined ? {} : { note }),
     ...(durationMinutes === undefined ? {} : { durationMinutes }),
   };

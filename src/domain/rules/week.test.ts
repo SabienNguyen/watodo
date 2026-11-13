@@ -65,3 +65,13 @@ describe('weekView', () => {
     expect(view.entries.map(row => row.activityName)).toEqual(['Old run', 'Walk'])
   })
 })
+
+describe('weekView with a span', () => {
+  test('a spanning entry is one entry of the week', () => {
+    const journal: JournalEntry[] = [{
+      id: 'span', activityId: 'dinner-out', sectionId: 'postWork', loggedAt: at(18, 0).getTime(),
+      itemId: 'postWork', committed: true, throughItemId: 'bedtime',
+    }]
+    expect(weekView(snapWith(journal), '2026-10-12').entries.map(row => row.entry.id)).toEqual(['span'])
+  })
+})

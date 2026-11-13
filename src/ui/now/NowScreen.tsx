@@ -22,8 +22,13 @@ import { SpendConfirm } from './SpendConfirm'
 const AFTER_LOG_MS = 6000
 
 interface NoteTarget { entryId: Id; activityName: string }
-/** A committed activity waiting for the user to confirm the spend. */
-interface SpendTarget { activityId: Id; activityName: string; slotName: string }
+/** A committed activity waiting for the user to confirm the spend, and the last slot it covers (throughId). */
+interface SpendTarget {
+  activityId: Id
+  activityName: string
+  choices: { id: Id; name: string }[]
+  throughId: Id
+}
 /** A spent slot's commitment waiting for the user to undo it. */
 interface UndoTarget { entryId: Id; activityName: string; slotName: string }
 
@@ -65,16 +70,21 @@ export function NowScreen() {
     ), { duration: AFTER_LOG_MS })
   }
 
-  const logTap = (activityId: Id, activityName: string) => {
-    const result = logActivity(store, clock, activityId)
+  const logTap = (activityId: Id, activityName: string, throughItemId?: Id) => {
+    const result = logActivity(store, clock, activityId, { throughItemId })
     if (result.status === 'logged') showAfterLog(result.entryId, activityName)
     else if (result.status === 'needs-template') setPicker({ pending: result.pending })
   }
 
-  // A quick activity logs at once. A committed one asks first.
+  // A quick activity logs at once. A committed one asks first, defaulting to its own slot only.
   const tapActivity = (activity: Activity) => {
     if (activity.committed) {
-      setSpending({ activityId: activity.id, activityName: activity.name, slotName: positionName ?? '' })
+      setSpending({
+        activityId: activity.id,
+        activityName: activity.name,
+        choices: view.spanChoices.map(({ item, displayName }) => ({ id: item.id, name: displayName })),
+        throughId: position?.item.id ?? '',
+      })
     } else {
       logTap(activity.id, activity.name)
     }
@@ -82,7 +92,7 @@ export function NowScreen() {
 
   const confirmSpend = (target: SpendTarget) => {
     setSpending(null)
-    logTap(target.activityId, target.activityName)
+    logTap(target.activityId, target.activityName, target.throughId)
   }
 
   const pickerDone = (entryId: Id | null) => {
@@ -200,8 +210,10 @@ export function NowScreen() {
 
       {spending !== null && (
         <SpendConfirm
-          slotName={spending.slotName}
+          choices={spending.choices}
+          throughId={spending.throughId}
           activityName={spending.activityName}
+          onThroughChange={throughId => setSpending({ ...spending, throughId })}
           onConfirm={() => confirmSpend(spending)}
           onCancel={() => setSpending(null)}
         />
@@ -285,6 +297,8 @@ function AddActivity({ slotName, sectionId }: { slotName: string; sectionId: Id 
                   return (
                     <Button
                       key={choice.value}
+                      // Inside the add form: a plain button, so choosing how long does not submit it.
+                      type="button"
                       variant={pressed ? 'default' : 'outline'}
                       size="sm"
                       aria-pressed={pressed}

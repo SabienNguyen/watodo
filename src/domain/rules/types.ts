@@ -16,6 +16,7 @@ export interface Listing { sectionId: Id; activityId: Id; position: number; unti
 export interface JournalEntry {
   id: Id; activityId: Id; sectionId: Id; loggedAt: number; // epoch ms, recorded but never shown
   itemId?: Id;                     // the slot it was logged in, when known
+  throughItemId?: Id;              // on a committed entry: the last slot item it spends (inclusive). Absent, or the own slot, means just that slot
   committed?: boolean;             // this entry spent its slot (copied from the activity when logged)
   note?: string; durationMinutes?: number;
 }

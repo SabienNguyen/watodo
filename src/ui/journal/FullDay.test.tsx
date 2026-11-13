@@ -173,6 +173,30 @@ describe('FullDay', () => {
     expect(screen.queryByText(/Free time/)).toBeNull()
   })
 
+  test('a committed span shows one step for the activity, and hides the later slots and the fixed steps between', () => {
+    const store = basicDayStore()
+    setActivityCommitted(store, activityId(store, 'Gym'), true)
+    const postDinner = readSnapshot(store).items.find(item => item.name === 'Post dinner')
+    logActivity(store, MONDAY_1745, activityId(store, 'Gym'), { throughItemId: postDinner?.id })
+    renderWithWatodo(<FullDay />, { store, clock: MONDAY_1745 })
+
+    const rows = screen.getAllByRole('listitem')
+    expect(rows).toHaveLength(8)
+    expect(rows.map(row => row.textContent)).toEqual([
+      expect.stringContaining('Wake up'),
+      expect.stringContaining('Brush teeth'),
+      expect.stringContaining('Change clothes'),
+      expect.stringContaining('Work'),
+      expect.stringContaining('Gym'),
+      expect.stringContaining('Bedtime'),
+      expect.stringContaining('Brush teeth'),
+      expect.stringContaining('Sleep'),
+    ])
+    expect(within(rows[4]).getByText('committed')).toBeInTheDocument()
+    expect(screen.queryByText('Dinner')).toBeNull()
+    expect(screen.queryByText('Post dinner')).toBeNull()
+  })
+
   test('with no template renders nothing', () => {
     const { container } = renderWithWatodo(<FullDay />, { store: createWatodoStore() })
 

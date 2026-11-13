@@ -1,7 +1,7 @@
 import { addDays, dayKeyOf, daysBetween } from './dayRollover'
 import { guessTemplate, type TemplateGuess } from './guess'
 import {
-  entriesBySlot, itemsOf, positionAt, slotDisplayNames, slotsOf, spentSlots, type Position,
+  entriesBySlot, itemsOf, positionAt, slotDisplayNames, slotsOf, spanOf, spentSlots, type Position,
 } from './currentSlot'
 import { activityName, sectionName } from './names'
 import { lastDone } from './lastDone'
@@ -21,12 +21,15 @@ export interface NowView {
   activities: { activity: Activity; lastDone: JournalEntry | null }[];
   emptied: boolean;                     // the current slot is open, its section lists activities, and `activities` is empty
   nextSlot: { item: TemplateItem; displayName: string } | null; // first unspent slot after the current one; null when none or no position
+  // when the position is an open slot: it, then each following slot until the first spent one; else empty
+  spanChoices: { item: TemplateItem; displayName: string }[];
 }
 
 export interface FullDayView {
   template: Template | null
   items: {
     item: TemplateItem; displayName: string; current: boolean;
+    insideSpan: boolean;                                     // after the first slot of a committed span, up to and including its last slot
     activities: Activity[];                                  // listed activities; empty for fixed steps
     logged: { entry: JournalEntry; activityName: string }[]; // today's entries in this slot occurrence, oldest first; empty for fixed steps
   }[];
@@ -124,7 +127,7 @@ export function nowView(snap: Snapshot, at: Date): NowView {
   if (template === null) {
     return {
       day, guess, template: null, slots: [], position: null, positionName: null, dayDone: false, activities: [],
-      emptied: false, nextSlot: null,
+      emptied: false, nextSlot: null, spanChoices: [],
     }
   }
 
@@ -161,9 +164,33 @@ export function nowView(snap: Snapshot, at: Date): NowView {
     : orderedSlots.slice(orderedSlots.findIndex(slot => slot.id === position.item.id) + 1)
       .find(slot => !spent.has(slot.id))
   const nextSlot = after === undefined ? null : { item: after, displayName: displayName(after) }
-  return {
-    day, guess, template, slots, position, positionName, dayDone, activities, emptied, nextSlot,
+  const spanChoices: NowView['spanChoices'] = []
+  if (open) {
+    for (const slot of orderedSlots.slice(orderedSlots.findIndex(candidate => candidate.id === position.item.id))) {
+      if (spent.has(slot.id)) break
+      spanChoices.push({ item: slot, displayName: displayName(slot) })
+    }
   }
+  return {
+    day, guess, template, slots, position, positionName, dayDone, activities, emptied, nextSlot, spanChoices,
+  }
+}
+
+/**
+ * The ids of the items that a committed span covers after its first slot, up to and including its last
+ * slot: the later slots and the fixed steps between them.
+ */
+function spanInteriorIds(items: TemplateItem[], todaysEntries: JournalEntry[]): Set<Id> {
+  const interior = new Set<Id>()
+  for (const entry of todaysEntries) {
+    if (entry.committed !== true) continue
+    const span = spanOf(items, entry)
+    if (span.length < 2) continue
+    const first = items.indexOf(span[0])
+    const last = items.indexOf(span[span.length - 1])
+    for (const item of items.slice(first + 1, last + 1)) interior.add(item.id)
+  }
+  return interior
 }
 
 export function fullDayView(snap: Snapshot, at: Date): FullDayView {
@@ -175,12 +202,14 @@ export function fullDayView(snap: Snapshot, at: Date): FullDayView {
   const names = slotDisplayNames(items)
   const todaysEntries = snap.journal.filter(entry => dayOfEntry(entry) === now.day)
   const loggedBySlot = entriesBySlot(items, todaysEntries)
+  const insideSpan = spanInteriorIds(items, todaysEntries)
   return {
     template: now.template,
     items: items.map(item => ({
       item,
       displayName: names.get(item.id) ?? item.name,
       current: item.kind === 'slot' && item.id === currentId,
+      insideSpan: insideSpan.has(item.id),
       activities: item.kind === 'slot' && item.sectionId !== undefined
         ? sectionActivities(snap, item.sectionId, now.day)
         : [],
@@ -199,7 +228,13 @@ export function fullDayView(snap: Snapshot, at: Date): FullDayView {
 export function entrySlotName(snap: Snapshot, entry: JournalEntry): string {
   const item = snap.items.find(candidate => candidate.id === entry.itemId)
   if (item !== undefined) {
-    return slotDisplayNames(itemsOf(snap, item.templateId)).get(item.id) ?? item.name
+    const items = itemsOf(snap, item.templateId)
+    const names = slotDisplayNames(items)
+    const span = spanOf(items, entry)
+    if (span.length > 1) {
+      return `${names.get(span[0].id) ?? span[0].name} – ${names.get(span[span.length - 1].id) ?? span[span.length - 1].name}`
+    }
+    return names.get(item.id) ?? item.name
   }
   return sectionName(snap, entry.sectionId)
 }

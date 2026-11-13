@@ -986,3 +986,43 @@ export function addActivityToSection(store, sectionId, name, options?: { committ
 
 ### Task 37: temporary activities in the rules and domain
 ### Task 38: temporary activities on screen
+
+---
+
+# Change 16: one activity across several slots
+
+See "One activity across several slots" in `docs/spec.md`.
+
+## Contracts
+
+### `src/domain/rules/types.ts`
+`JournalEntry` gains `throughItemId?: Id`: on a committed entry, the last slot item it spends (inclusive). Absent, or naming the entry's own slot, means just its own slot.
+
+### `src/domain/rules/currentSlot.ts` (changes)
+- `spentSlots(items, todaysEntries)`: a committed entry spends its slot (via `slotOf`) and, when `throughItemId` names a slot later in `items`' slot order, every slot from its own through that one. A `throughItemId` that is missing, earlier, or not a slot of these items is ignored (own slot only). Where entries overlap, the latest is reported, as now.
+- `positionAt` needs no rule change: a committed log advances to the first unspent slot after its own, which now lies after the span.
+- New: `export function spanOf(items: TemplateItem[], entry: JournalEntry): TemplateItem[]` — the slots the entry spends, in order (one slot for quick entries and plain committed ones; empty when it maps to no slot).
+
+### `src/domain/rules/views.ts` (changes)
+- `NowView` gains `spanChoices: { item: TemplateItem; displayName: string }[]`: when the position is on an open (unspent) slot, that slot then each following slot in order until the first spent one; else empty.
+- `FullDayView` items gain `insideSpan: boolean`: true for every item (slot or fixed) after the first slot of a committed entry's span, up to and including its last slot. A spanning entry appears in `logged` of its first slot only.
+- `entrySlotName(snap, entry)`: for an entry whose `spanOf` (within its item's template) has more than one slot, `{first display name} – {last display name}`.
+
+### `src/domain/logging.ts` (changes)
+```ts
+export interface PendingLog { activityId: Id; sectionId: Id; itemId: Id; throughItemId?: Id }
+export function logActivity(store, clock, activityId, options?: { throughItemId?: Id }): LogResult;
+```
+- `logActivity`: `throughItemId` is kept only when the activity is committed and it is one of `nowView.spanChoices` other than the position itself; otherwise dropped (not an error). It is written on the journal row and carried in a `needs-template` pending.
+- `confirmDay` with a pending: writes `throughItemId` only when that item belongs to the template being confirmed; else drops it.
+- `schema.ts` `JournalFields` / `writeJournalRow` and `store.ts` `readJournalEntry` handle `throughItemId` (a string).
+
+### UI
+- `SpendConfirm` gains `choices: { id: Id; name: string }[]`, `throughId: Id`, `onThroughChange(id)`. When `choices.length > 1`, a `Through` label and a wrapping row of small buttons (one per choice, `aria-pressed` on the chosen one; the chosen one and those before it are filled (variant default), the rest outline). The title is `Spend {slot} on {activity}?` when the first choice is chosen, else `Spend {first} – {chosen} on {activity}?`.
+- `NowScreen`: the spend target keeps the chosen through (default: the position's item); confirming calls `logActivity(store, clock, id, { throughItemId })`; the day picker's pending carries it through `confirmDay`.
+- `FullDay`: items with `insideSpan` are not rendered.
+
+## Tasks
+
+### Task 39: spans in the rules and domain
+### Task 40: spans on screen

@@ -71,18 +71,33 @@ export function entriesBySlot(items: TemplateItem[], todaysEntries: JournalEntry
 }
 
 /**
- * The committed entry that spent each slot, by slot item id. Where several committed entries are in one
- * slot, the latest is reported.
+ * The slots an entry spends, in order: its own slot, and on a committed entry every slot up to its
+ * `throughItemId` (inclusive) when that names a later slot of `items`. Anything else (a quick entry, a
+ * missing, earlier or unknown `throughItemId`) gives just its own slot. Empty when it maps to no slot.
+ */
+export function spanOf(items: TemplateItem[], entry: JournalEntry): TemplateItem[] {
+  const slots = slotsOf(items)
+  const own = slotOf(slots, entry)
+  if (own === undefined) return []
+  if (entry.committed !== true || entry.throughItemId === undefined) return [own]
+  const ownIndex = slots.indexOf(own)
+  const throughIndex = slots.findIndex(slot => slot.id === entry.throughItemId)
+  if (throughIndex <= ownIndex) return [own]
+  return slots.slice(ownIndex, throughIndex + 1)
+}
+
+/**
+ * The committed entry that spent each slot, by slot item id. A committed entry spends every slot of its
+ * span (see spanOf). Where several committed entries are in one slot, the latest is reported.
  */
 export function spentSlots(items: TemplateItem[], todaysEntries: JournalEntry[]): Map<Id, JournalEntry> {
-  const slots = slotsOf(items)
   const spent = new Map<Id, JournalEntry>()
   for (const entry of todaysEntries) {
     if (entry.committed !== true) continue
-    const slot = slotOf(slots, entry)
-    if (slot === undefined) continue
-    const current = spent.get(slot.id)
-    if (current === undefined || entry.loggedAt > current.loggedAt) spent.set(slot.id, entry)
+    for (const slot of spanOf(items, entry)) {
+      const current = spent.get(slot.id)
+      if (current === undefined || entry.loggedAt > current.loggedAt) spent.set(slot.id, entry)
+    }
   }
   return spent
 }
