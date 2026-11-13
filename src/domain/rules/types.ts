@@ -1,3 +1,5 @@
+import type { NotifySettings } from './notify'
+
 export type Id = string;
 /** 'YYYY-MM-DD'. The day a moment belongs to; days run 04:00 to 04:00 local time. */
 export type DayKey = string;
@@ -41,4 +43,5 @@ export interface Snapshot {
   journal: JournalEntry[]; days: DayRecord[]; defaultTemplateId: Id | null;
   // activities, sections and templates hold live rows only; removed holds deleted rows, kept for their names
   removed: { activities: Activity[]; sections: Section[]; templates: Template[] };
+  notify?: NotifySettings;             // absent = DEFAULT_NOTIFY
 }

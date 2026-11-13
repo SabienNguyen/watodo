@@ -112,6 +112,26 @@ watodo runs on the computer and the iPhone and keeps both in step, with no cloud
 
 Not in phase 2: Electron, a sync status indicator, sync between devices without the hub, user accounts.
 
+## Weekly recap
+
+- Progress has a week section at the top: the week's dates between a left and a right arrow (Monday to Sunday; it opens on the current week; right is disabled on the current week), how many things were done (`12 things done`), and `Watch recap`. A week with nothing logged says `Nothing logged this week.` and has no button.
+- The list is not shown until `Watch recap` is pressed. Then the week's entries appear one at a time in the order they were logged, about half a second apart, each ticking off like a checklist, and the list scrolls along. A small day label (`Mon 3`) appears where a new day starts. Committed entries have the committed badge. A `Show the rest` button under the list shows the rest at once. When it finishes, the whole list stays. Moving to another week hides it again. With reduced motion turned on, the whole list appears at once.
+
+## Notifications
+
+The hub sends notifications to devices that turn them on (web push). Tapping one opens the app.
+
+Kinds, each with its own switch (all on by default):
+1. **Slot reminders**: the current slot is open and nothing has been logged in it today, and it is 30 minutes past when you usually log that slot. The usual time is learned from the last 4 weeks of the same kind of day (days whose template has the same label as today's), and needs at least 3 such days. Title: the slot; text: its activities.
+2. **After committed activities**: the last thing logged today was committed, and as long has passed as that activity usually takes (from its entries' durations, or the time until the next log on that day; at least 3 samples from the last 4 weeks). Title: `Back from {activity}?`; text: the current slot and its activities.
+3. **Daily check-in**: nothing logged today, an hour past when you usually make your first log (same learning as 1). Not sent on a day a slot reminder was sent. Title: `What's next?`; text: the current slot and its activities.
+4. **Resting activities back**: an activity's rest days are over. Title: `{activity} is back`; text: the slots that list it.
+5. **Weekly recap**: on Monday, when last week has entries. Title: `Your week is ready`; text: `{n} things done`. Tapping it opens Progress.
+
+Limits: at most `Per day` notifications per day (default 3); none during quiet hours (default 23:00 to 08:00); none within 20 minutes of the previous one; 1 to 3 are not sent within 20 minutes of a log. Each notification is sent once.
+
+Settings are in a `Notifications` tab in Edit: `Turn on notifications` for this device (then `Turn off` and `Send test`), a checkbox for each kind, `Per day`, and `Quiet from` / `until` times. These are the only clock times in the app. Turning them on is per device; the rest of the settings sync.
+
 ## Out of scope for phase 1 and 2
 
 Electron, "Pick one for me", a sync status indicator, tracking fixed steps.

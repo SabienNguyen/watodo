@@ -35,6 +35,8 @@ export default defineConfig({
         navigateFallback: '/index.html',
         // The hub's own paths (/hub/time and the WebSocket) must always reach the network, never the cached shell.
         navigateFallbackDenylist: [/^\/(sync|hub)/],
+        // Shows the hub's web push notifications; see public/push-sw.js.
+        importScripts: ['push-sw.js'],
       },
     }),
   ],

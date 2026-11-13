@@ -1,6 +1,6 @@
 // Private to src/domain: the only place that knows table, value and cell names.
 import type { MergeableStore } from 'tinybase';
-import { nameKey, type Id } from './rules';
+import { nameKey, type Id, type NotifyKind } from './rules';
 
 export const TABLE = {
   labels: 'labels',
@@ -16,7 +16,29 @@ export const TABLE = {
 export const VALUE = {
   defaultTemplateId: 'defaultTemplateId',
   setupFinished: 'setupFinished',
+  notifySlot: 'notifySlot',
+  notifyCommitted: 'notifyCommitted',
+  notifyCheckIn: 'notifyCheckIn',
+  notifyRested: 'notifyRested',
+  notifyRecap: 'notifyRecap',
+  notifyDailyCap: 'notifyDailyCap',
+  quietStart: 'quietStart',
+  quietEnd: 'quietEnd',
 } as const;
+
+/** Rounds, then clamps to low..high. Used for numbers written by the setters and read back from the store. */
+export function roundedClamp(value: number, low: number, high: number): number {
+  return Math.min(high, Math.max(low, Math.round(value)));
+}
+
+/** The store value that holds each notification kind's on/off flag. */
+export const NOTIFY_KIND_VALUE: Record<NotifyKind, string> = {
+  slot: VALUE.notifySlot,
+  committed: VALUE.notifyCommitted,
+  checkIn: VALUE.notifyCheckIn,
+  rested: VALUE.notifyRested,
+  recap: VALUE.notifyRecap,
+};
 
 export function newId(): Id {
   return crypto.randomUUID();

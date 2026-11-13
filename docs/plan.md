@@ -851,3 +851,94 @@ The `+` add field, `Next slot`, and names, with tests.
 
 ### Task 31: Journal, full day and Progress
 With tests.
+
+---
+
+# Change 14: weekly recap and notifications
+
+See "Weekly recap" and "Notifications" in `docs/spec.md`.
+
+## Contracts
+
+### `src/domain/rules/week.ts` (new, re-exported from `rules/index.ts`)
+```ts
+export function weekStartOf(day: DayKey): DayKey;            // the Monday of that day's week (weekdayOf: 0 = Monday)
+export interface WeekView {
+  start: DayKey; end: DayKey;                                 // end = start + 6
+  entries: { entry: JournalEntry; day: DayKey; activityName: string }[]; // every entry whose day is in the week, oldest first
+}
+export function weekView(snap: Snapshot, start: DayKey): WeekView;
+```
+
+### `src/domain/rules/notify.ts` (new, re-exported)
+```ts
+export type NotifyKind = 'slot' | 'committed' | 'checkIn' | 'rested' | 'recap';
+export interface NotifySettings {
+  kinds: Record<NotifyKind, boolean>;
+  dailyCap: number;                    // 1..10
+  quietStart: number; quietEnd: number; // minutes after local midnight, 0..1439; start > end wraps midnight; equal = no quiet hours
+}
+export const DEFAULT_NOTIFY: NotifySettings; // all kinds on, dailyCap 3, quietStart 1380, quietEnd 480
+export interface SentNotification { kind: NotifyKind; key: string; at: number }
+export interface DueNotification { kind: NotifyKind; key: string; title: string; body: string; url: string } // url '/' or '/?tab=progress' (recap)
+/** The one notification to send now, or null. Pure: `sent` is what was already sent (any age). */
+export function dueNotification(snap: Snapshot, at: Date, sent: SentNotification[]): DueNotification | null;
+```
+Settings come from `snap.notify ?? DEFAULT_NOTIFY`. Definitions:
+- `today = dayKeyOf(at)`. "Day minutes" of a moment = minutes since 04:00 of its day (`(h*60+m - 240 + 1440) % 1440`), so times after midnight sort after the evening.
+- **Same kind of day**: the 28 days before today (not today) whose day record's `templateId` names a template (live or removed) with the same `labelId` as today's template (`nowView(snap, at).template`). No template today -> no kinds 1-3.
+- **Median** of samples; fewer than 3 samples -> no usual value.
+- Gates, in order, return null: quiet hours (local minutes of `at`); count of `sent` whose `dayKeyOf(at)` is today >= dailyCap; any `sent` less than 20 minutes ago.
+- Candidates in priority order; the first that is enabled, due, and whose `key` is not in `sent` is returned:
+  1. `committed`, key `committed:{entryId}`: the latest entry today `L` has `committed === true`; `nowView` has an open position (not spent). Duration samples for `L.activityId` from same-kind days: an entry's `durationMinutes` if set, else minutes until the next entry that day if any. Due when `at >= L.loggedAt + median minutes`. Title `Back from {activityName}?`, body `{positionName}: {a} · {b}` (just `{positionName}` when no activities show).
+  2. `slot`, key `slot:{today}:{itemId}`: open position, no entry in `entriesBySlot(...)` for it today, `nowView.activities` not empty. Samples: on each same-kind day, the day minutes of the first entry with this slot's `sectionId`. Due when day minutes of `at` >= median + 30. Title `{positionName}`, body `{a} · {b} · {c}`.
+  3. `checkIn`, key `checkIn:{today}`: no entries today; open position; no `sent` key starting `slot:{today}:`. Samples: day minutes of each same-kind day's first entry. Due when day minutes of `at` >= median + 60. Title `What's next?`, body as in 1.
+  4. `rested`, key `rested:{activityId}:{lastDoneEntryId}`: a live activity with `restDays`, `lastDone` not null, and `0 <= daysBetween(lastDoneDay, today) - restDays <= 2`. Title `{name} is back`, body the names of the slots listing it, joined ` · `.
+  5. `recap`, key `recap:{weekStartOf(addDays(today, -7))}`: today is a Monday and last week has at least one entry. Title `Your week is ready`, body `{n} things done` (`1 thing done`), url `/?tab=progress`.
+- Kinds 1-3 are skipped while any journal entry was logged less than 20 minutes before `at`. 4 and 5 are not.
+All other urls are `/`.
+
+### `src/domain/rules/types.ts`
+`Snapshot` gains optional `notify?: NotifySettings` (`readSnapshot` always fills it, with defaults for missing values).
+
+### `src/domain/notify.ts` (new, re-exported from `src/domain/index.ts`)
+```ts
+export function setNotifyKind(store: WatodoStore, kind: NotifyKind, on: boolean): void;
+export function setDailyCap(store: WatodoStore, cap: number): void;              // rounded, clamped to 1..10
+export function setQuietHours(store: WatodoStore, start: number, end: number): void; // each rounded, clamped to 0..1439
+```
+Stored as store values `notifySlot`, `notifyCommitted`, `notifyCheckIn`, `notifyRested`, `notifyRecap` (booleans), `notifyDailyCap`, `quietStart`, `quietEnd` (numbers). Absent values read as the defaults.
+
+### Hub
+- `hub/notify-entry.ts`: `export function planFromContent(json: string, at: Date, sent: SentNotification[]): DueNotification | null` — parses the hub's data file (TinyBase mergeable content), `setMergeableContent` into a fresh `createMergeableStore()`, `readSnapshot`, `dueNotification`. Built with `vite.hub.config.ts` (SSR build, `@` alias, no PWA plugin) into `dist-hub/notify-entry.js`; `npm run build` also runs that build. `dist-hub` is gitignored. (The hub runs `.ts` with Node's type stripping, which cannot resolve the domain's extensionless imports; the bundle can.)
+- `web-push` (4.x, vetted) sends. A local declaration `hub/web-push.d.ts` types the functions used.
+- Files in the data directory: `vapid.json` (generated on first start, mode 0600), `subscriptions.json`, `sent.json` (pruned to 14 days).
+- Endpoints: `GET /hub/push/key` -> `{ publicKey }`; `POST /hub/push/subscribe` (a PushSubscription JSON) -> 204, deduplicated by endpoint; `POST /hub/push/unsubscribe` `{ endpoint }` -> 204; `POST /hub/push/test` -> sends `{ title: 'watodo', body: 'Notifications are on', url: '/' }` to every subscription, 204. Bodies over 16 KB or invalid -> 400. Other POSTs -> 405 as now.
+- Every 60 s (configurable for tests), when there is at least one subscription and the data file exists: `planFromContent(file, now, sent)`; if due, send `{ title, body, url, tag: key }` to every subscription (TTL 1 hour), drop subscriptions answered 404/410, append to `sent`. Errors are logged, never thrown. VAPID subject: `WATODO_PUSH_SUBJECT`, default `https://github.com/SabienNguyen/watodo`.
+- `HubOptions` gains `notifier?: { intervalMs?: number; now?: () => Date; send?: (subscription, payload) => Promise<{ statusCode: number }>; planPath?: string; disabled?: boolean }` so tests can drive it.
+
+### Service worker
+`public/push-sw.js`, added through `workbox.importScripts`: on `push`, show the notification (title, body, icon `/pwa-192.png`, tag, data.url); on `notificationclick`, focus an open window and navigate it to the url, else open the url.
+
+### UI
+- `src/ui/push.ts`: `pushState()`, `turnOnPush()`, `turnOffPush()`, `sendTestPush()` over the Push API and the hub endpoints. `PushState = 'unsupported' | 'denied' | 'off' | 'on'`.
+- Edit gains a fifth tab `Notifications` (tabs fit or scroll at phone width): the device button(s), a checkbox per kind (`Slot reminders`, `After committed activities`, `Daily check-in`, `Resting activities back`, `Weekly recap`), `Per day` (number 1-10), `Quiet from` and `until` (`<input type="time">`). Unsupported: `Notifications aren't available here.` Denied: `Notifications are blocked in Settings.`
+- `App.tsx`: `?tab=progress` (any tab name, lower case) opens on that tab, then the parameter is removed from the address.
+- Progress: the week section from the spec, at the top.
+
+## Tasks
+
+### Task 32: recap and notification rules
+`week.ts`, `notify.ts`, the `Snapshot.notify` type, with tests.
+
+### Task 33: notification settings in the domain
+`src/domain/notify.ts`, `readSnapshot` filling `notify`, with tests.
+
+### Task 34: the hub sends notifications
+`notify-entry.ts` and its build, `web-push`, keys, subscriptions, endpoints, the timer, the service worker script, with tests.
+
+### Task 35: the Notifications tab
+`src/ui/push.ts`, the Edit tab, `?tab=` in `App.tsx`, with tests.
+
+### Task 36: the weekly recap in Progress
+With tests.

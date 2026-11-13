@@ -9,6 +9,7 @@ test('re-exports every rule function and constant', () => {
     'lastDone', 'nowView', 'fullDayView',
     'journalByDay', 'progress', 'dotStrip', 'templatesUsingSection', 'sectionsOfActivity',
     'STARTERS', 'SUGGESTED_ACTIVITIES', 'draftFromStarter', 'draftFromTemplate', 'blankDraft', 'moveStep',
+    'weekStartOf', 'weekView', 'DEFAULT_NOTIFY', 'dueNotification',
   ]
   for (const name of names) {
     expect(rules[name], name).toBeDefined()

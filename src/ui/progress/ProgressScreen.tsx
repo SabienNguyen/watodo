@@ -5,6 +5,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useNowDate, useSnapshot } from '@/ui/hooks'
+import { WeekRecap } from './WeekRecap'
 
 const RANGES = [7, 30, 90]
 const DEFAULT_RANGE = 30
@@ -28,6 +29,8 @@ export function ProgressScreen() {
 
   return (
     <div className="flex flex-col gap-8">
+      <WeekRecap />
+
       <div className="flex gap-2">
         {RANGES.map(days => {
           const pressed = days === range

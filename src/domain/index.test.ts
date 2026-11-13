@@ -13,6 +13,7 @@ test('re-exports the domain interface and the rules', () => {
     'nowView', 'fullDayView', 'journalByDay', 'progress', 'dotStrip', 'guessTemplate', 'positionAt', 'spentSlots', 'lastDone',
     'dayKeyOf', 'noonOf', 'templatesUsingSection', 'STARTERS', 'draftFromStarter', 'draftFromTemplate',
     'blankDraft', 'moveStep',
+    'setNotifyKind', 'setDailyCap', 'setQuietHours',
   ];
   for (const name of names) {
     expect(domain[name], name).toBeDefined();

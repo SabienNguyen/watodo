@@ -14,12 +14,13 @@ import { Input } from '@/components/ui/input'
 import { useSnapshot, useWatodo } from '@/ui/hooks'
 import { AddField, EditableText, RestDaysField } from './fields'
 import { NameRow } from './NameRow'
+import { NotificationsPart } from './NotificationsPart'
 import { StarterPicker } from './StarterPicker'
 import { TemplateEditorForm } from './TemplateEditor'
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
-const PARTS = ['Slots', 'Activities', 'Templates', 'Labels'] as const
+const PARTS = ['Slots', 'Activities', 'Templates', 'Labels', 'Notifications'] as const
 type Part = (typeof PARTS)[number]
 
 const PART = 'flex flex-col gap-4'
@@ -115,7 +116,8 @@ export function EditScreen() {
 
   return (
     <div className="flex flex-col">
-      <div role="tablist" aria-label="Edit parts" className="grid grid-cols-4 border-b">
+      {/* Five tabs can outgrow a 390px phone, so the row scrolls sideways when it must; flex-1 shares any spare width. */}
+      <div role="tablist" aria-label="Edit parts" className="flex overflow-x-auto border-b">
         {PARTS.map(name => {
           const selected = name === part
           return (
@@ -130,7 +132,7 @@ export function EditScreen() {
               tabIndex={selected ? 0 : -1}
               onClick={() => setPart(name)}
               onKeyDown={event => moveWithArrows(event, name)}
-              className={`-mb-px min-h-11 rounded-t-lg border px-1 text-sm whitespace-nowrap outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
+              className={`-mb-px min-h-11 flex-1 rounded-t-lg border px-2 text-sm whitespace-nowrap outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
                 selected
                   ? 'border-border bg-background font-semibold text-foreground'
                   : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -147,6 +149,7 @@ export function EditScreen() {
         {part === 'Activities' && <ActivitiesPart onOpen={id => edit({ kind: 'activity', id })} />}
         {part === 'Labels' && <LabelsPart onOpen={id => edit({ kind: 'label', id })} />}
         {part === 'Templates' && <TemplatesPart onOpenDraft={openDraft} />}
+        {part === 'Notifications' && <NotificationsPart />}
       </div>
     </div>
   )

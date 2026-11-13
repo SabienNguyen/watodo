@@ -1,8 +1,9 @@
 import { createMergeableStore, type MergeableStore, type Row } from 'tinybase';
-import type {
-  DayRecord, Id, JournalEntry, Label, Listing, Section, Snapshot, Template, TemplateItem, Activity,
+import {
+  DEFAULT_NOTIFY, type DayRecord, type Id, type JournalEntry, type Label, type Listing, type NotifyKind,
+  type NotifySettings, type Section, type Snapshot, type Template, type TemplateItem, type Activity,
 } from './rules';
-import { decodeWeekdays, TABLE, VALUE } from './schema';
+import { decodeWeekdays, NOTIFY_KIND_VALUE, roundedClamp, TABLE, VALUE } from './schema';
 
 export type WatodoStore = MergeableStore;
 
@@ -20,6 +21,29 @@ function text(row: Row, cellId: string): string | undefined {
 function num(row: Row, cellId: string): number | undefined {
   const cell = row[cellId];
   return typeof cell === 'number' ? cell : undefined;
+}
+
+/** Missing or wrongly typed values keep their default. Numbers are rounded and clamped like the setters do. */
+function readNotify(store: WatodoStore): NotifySettings {
+  const flagValue = (valueId: string, fallback: boolean): boolean => {
+    const value = store.getValue(valueId);
+    return typeof value === 'boolean' ? value : fallback;
+  };
+  const numberValue = (valueId: string, fallback: number, low: number, high: number): number => {
+    const value = store.getValue(valueId);
+    return typeof value === 'number' && Number.isFinite(value) ? roundedClamp(value, low, high) : fallback;
+  };
+  const kinds = Object.fromEntries(
+    (Object.keys(DEFAULT_NOTIFY.kinds) as NotifyKind[]).map(kind => [
+      kind, flagValue(NOTIFY_KIND_VALUE[kind], DEFAULT_NOTIFY.kinds[kind]),
+    ]),
+  ) as Record<NotifyKind, boolean>;
+  return {
+    kinds,
+    dailyCap: numberValue(VALUE.notifyDailyCap, DEFAULT_NOTIFY.dailyCap, 1, 10),
+    quietStart: numberValue(VALUE.quietStart, DEFAULT_NOTIFY.quietStart, 0, 1439),
+    quietEnd: numberValue(VALUE.quietEnd, DEFAULT_NOTIFY.quietEnd, 0, 1439),
+  };
 }
 
 function flag(row: Row, cellId: string): boolean | undefined {
@@ -154,6 +178,7 @@ export function readSnapshot(store: WatodoStore): Snapshot {
     journal: readRows(store, TABLE.journal, readJournalEntry).sort((a, b) => a.loggedAt - b.loggedAt),
     days: readRows(store, TABLE.days, readDayRecord).sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0)),
     defaultTemplateId: typeof defaultTemplateId === 'string' ? defaultTemplateId : null,
+    notify: readNotify(store),
     removed: {
       activities: readRows(store, TABLE.activities, readActivity, true),
       sections: readRows(store, TABLE.sections, readSection, true).sort(byPosition),

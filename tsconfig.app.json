@@ -25,5 +25,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src", "hub/web-push.d.ts", "hub/notify-entry.ts", "hub/notify-entry.test.ts"]
 }

@@ -9,6 +9,15 @@ import {
 import { renderWithWatodo } from '@/ui/testing'
 import { EditScreen } from './EditScreen'
 
+// The Notifications tab asks the browser for its state on mount; jsdom has no push support.
+vi.mock('@/ui/push', () => ({
+  pushState: vi.fn(async () => 'unsupported'),
+  turnOnPush: vi.fn(),
+  turnOffPush: vi.fn(),
+  sendTestPush: vi.fn(),
+  permissionGranted: vi.fn(() => false),
+}))
+
 beforeEach(() => {
   // jsdom does not scroll; the spy lets the tests see when the page is asked to go to the top.
   vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
@@ -29,7 +38,7 @@ function renderEdit(store: WatodoStore = finishedStore()) {
   return renderWithWatodo(<EditScreen />, { store })
 }
 
-type PartName = 'Slots' | 'Activities' | 'Templates' | 'Labels'
+type PartName = 'Slots' | 'Activities' | 'Templates' | 'Labels' | 'Notifications'
 
 /** Presses one of the Edit screen's tabs. */
 function pressTab(name: PartName) {
@@ -106,7 +115,7 @@ describe('Tabs', () => {
   test('the screen opens on the Slots tab, which is selected and shows only the Slots list', () => {
     renderEdit()
 
-    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Slots', 'Activities', 'Templates', 'Labels'])
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Slots', 'Activities', 'Templates', 'Labels', 'Notifications'])
     expect(screen.getByRole('tablist')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Slots' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tab', { name: 'Activities' })).toHaveAttribute('aria-selected', 'false')
@@ -183,9 +192,9 @@ describe('Tabs', () => {
 
     slots.focus()
     fireEvent.keyDown(slots, { key: 'ArrowLeft' })
-    expect(screen.getByRole('tab', { name: 'Labels' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Notifications' })).toHaveAttribute('aria-selected', 'true')
 
-    fireEvent.keyDown(screen.getByRole('tab', { name: 'Labels' }), { key: 'ArrowRight' })
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Notifications' }), { key: 'ArrowRight' })
     expect(screen.getByRole('tab', { name: 'Slots' })).toHaveAttribute('aria-selected', 'true')
   })
 

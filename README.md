@@ -52,6 +52,7 @@ change your data. Keep it off the open internet.
 | `WATODO_PORT` | `4780` | The port the hub listens on |
 | `WATODO_DATA_DIR` | `~/.local/share/watodo` | Where the hub keeps its copy of your data, in `watodo.json` |
 | `WATODO_STATIC_DIR` | `dist/` in this folder | The built app to serve |
+| `WATODO_PUSH_SUBJECT` | `https://github.com/SabienNguyen/watodo` | The contact address sent to push services for notifications; an `https` URL or a `mailto:` address |
 
 ### 2. Reach it from your phone
 
@@ -86,6 +87,13 @@ the path to this folder, save it as `~/.config/systemd/user/watodo-hub.service`,
 systemctl --user daemon-reload
 systemctl --user enable --now watodo-hub
 ```
+
+### Notifications
+
+The hub sends notifications through each browser's push service, so it needs internet access. Its
+keys and the list of devices live in the data directory next to `watodo.json`, as `vapid.json` and
+`subscriptions.json`. Back up `vapid.json` with your data: if it is lost, every device has to turn
+notifications on again.
 
 ### Guided setup
 

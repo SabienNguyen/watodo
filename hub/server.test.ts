@@ -2,12 +2,13 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { request, type IncomingHttpHeaders } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi, type MockInstance } from 'vitest';
 import { WebSocket } from 'ws';
 import { createMergeableStore, type MergeableStore } from 'tinybase';
 import { createWsSynchronizer, type WsSynchronizer } from 'tinybase/synchronizers/synchronizer-ws-client';
 import * as hubModule from './server.ts';
 import { SYNC_PATH, startHub, type Hub } from './server.ts';
+import type { NotifierOptions } from './push.ts';
 
 const INDEX_HTML = '<!doctype html><title>watodo</title><div id="root"></div>';
 const APP_JS = 'console.log("app");';
@@ -363,5 +364,325 @@ describe('close()', () => {
     hubs.push(second);
     expect(second.port).toBe(port);
     expect(await tryOpen(syncUrl(port))).toBe('open');
+  });
+});
+
+const ENDPOINT_A = 'https://push.example/a';
+const ENDPOINT_B = 'https://push.example/b';
+const NOW = new Date(2026, 9, 12, 10, 0);
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Polls until check() is true (it may be async), failing at the deadline.
+async function waitUntil(check: () => boolean | Promise<boolean>, timeoutMs = 3000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await check())) {
+    if (Date.now() > deadline) {
+      throw new Error('timed out waiting for the notifier');
+    }
+    await sleep(5);
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// A subscription, read back from disk, or none when the file does not exist yet.
+async function readFileJson(name: string): Promise<unknown> {
+  try {
+    return JSON.parse(await readFile(path.join(dataDir, name), 'utf8'));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
+  }
+}
+
+async function endpointsOnDisk(): Promise<string[]> {
+  const list = (await readFileJson('subscriptions.json')) as { endpoint: string }[] | undefined;
+  return (list ?? []).map((subscription) => subscription.endpoint);
+}
+
+function postRaw(port: number, requestPath: string, body: string): Promise<Reply> {
+  return new Promise((resolve, reject) => {
+    const req = request({
+      host: '127.0.0.1',
+      port,
+      method: 'POST',
+      path: requestPath,
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+    }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => {
+        resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks).toString('utf8') });
+      });
+    });
+    req.on('error', reject);
+    req.end(body);
+  });
+}
+
+function subscriptionBody(endpoint: string): string {
+  return JSON.stringify({ endpoint, expirationTime: null, keys: { p256dh: 'p256dh-key', auth: 'auth-key' } });
+}
+
+async function subscribe(port: number, endpoint: string): Promise<void> {
+  const reply = await postRaw(port, '/hub/push/subscribe', subscriptionBody(endpoint));
+  expect(reply.status).toBe(204);
+}
+
+// Endpoint tests run with the timer off; the notifier tests below turn it on.
+async function startPushHub(notifier: NotifierOptions = { disabled: true }): Promise<Hub> {
+  const hub = await startHub({ port: 0, dataDir, staticDir, notifier });
+  hubs.push(hub);
+  return hub;
+}
+
+describe('push: keys', () => {
+  test('GET /hub/push/key returns the same key after a restart with the same dataDir', async () => {
+    const first = await startPushHub();
+    const before = await rawRequest(first.port, 'GET', '/hub/push/key');
+    expect(before.status).toBe(200);
+    expect(before.headers['cache-control']).toBe('no-store');
+    const { publicKey } = JSON.parse(before.body) as { publicKey: string };
+    expect(publicKey.length).toBeGreaterThan(0);
+    await first.close();
+
+    const second = await startPushHub();
+    const after = await rawRequest(second.port, 'GET', '/hub/push/key');
+    expect(JSON.parse(after.body)).toEqual({ publicKey });
+  });
+
+  test('vapid.json is created on first start and readable by its owner only', async () => {
+    await startPushHub();
+    expect((await stat(path.join(dataDir, 'vapid.json'))).mode & 0o777).toBe(0o600);
+  });
+
+  test('a POST to a key path is 405', async () => {
+    const hub = await startPushHub();
+    const reply = await postRaw(hub.port, '/hub/push/key', '{}');
+    expect(reply.status).toBe(405);
+  });
+});
+
+describe('push: subscriptions', () => {
+  test('subscribe stores the subscription once per endpoint, with only its endpoint and keys', async () => {
+    const hub = await startPushHub();
+    await subscribe(hub.port, ENDPOINT_A);
+    await subscribe(hub.port, ENDPOINT_A);
+    expect(await readFileJson('subscriptions.json')).toEqual([
+      { endpoint: ENDPOINT_A, keys: { p256dh: 'p256dh-key', auth: 'auth-key' } },
+    ]);
+  });
+
+  test.each([
+    ['not JSON', 'nope'],
+    ['a JSON array', '[]'],
+    ['no endpoint', JSON.stringify({ keys: { p256dh: 'p', auth: 'a' } })],
+    ['an endpoint that is not https', JSON.stringify({ endpoint: 'http://push.example/a', keys: { p256dh: 'p', auth: 'a' } })],
+    ['an endpoint that is not a URL', JSON.stringify({ endpoint: 'https://', keys: { p256dh: 'p', auth: 'a' } })],
+    ['no keys', JSON.stringify({ endpoint: ENDPOINT_A })],
+    ['no auth key', JSON.stringify({ endpoint: ENDPOINT_A, keys: { p256dh: 'p' } })],
+    ['a numeric p256dh key', JSON.stringify({ endpoint: ENDPOINT_A, keys: { p256dh: 1, auth: 'a' } })],
+  ])('subscribe with %s is 400 and stores nothing', async (_label, body) => {
+    const hub = await startPushHub();
+    const reply = await postRaw(hub.port, '/hub/push/subscribe', body);
+    expect(reply.status).toBe(400);
+    expect(await readFileJson('subscriptions.json')).toBeUndefined();
+  });
+
+  test('a body over 16 KB is 400', async () => {
+    const hub = await startPushHub();
+    const body = subscriptionBody(`${ENDPOINT_A}/${'a'.repeat(17 * 1024)}`);
+    const reply = await postRaw(hub.port, '/hub/push/subscribe', body);
+    expect(reply.status).toBe(400);
+    expect(await readFileJson('subscriptions.json')).toBeUndefined();
+  });
+
+  test('unsubscribe removes the endpoint, is 204 for one never stored, and needs an https endpoint', async () => {
+    const hub = await startPushHub();
+    await subscribe(hub.port, ENDPOINT_A);
+    await subscribe(hub.port, ENDPOINT_B);
+
+    const removed = await postRaw(hub.port, '/hub/push/unsubscribe', JSON.stringify({ endpoint: ENDPOINT_A }));
+    expect(removed.status).toBe(204);
+    expect(await endpointsOnDisk()).toEqual([ENDPOINT_B]);
+
+    const unknown = await postRaw(hub.port, '/hub/push/unsubscribe', JSON.stringify({ endpoint: 'https://push.example/z' }));
+    expect(unknown.status).toBe(204);
+
+    const bad = await postRaw(hub.port, '/hub/push/unsubscribe', JSON.stringify({ endpoint: 42 }));
+    expect(bad.status).toBe(400);
+    expect(await endpointsOnDisk()).toEqual([ENDPOINT_B]);
+  });
+});
+
+describe('push: test notification', () => {
+  test('sends the test notification to every subscription and answers 204', async () => {
+    const sent: { endpoint: string; payload: unknown }[] = [];
+    const hub = await startPushHub({
+      disabled: true,
+      send: async (subscription, payload) => {
+        sent.push({ endpoint: subscription.endpoint, payload });
+        return { statusCode: 201 };
+      },
+    });
+    await subscribe(hub.port, ENDPOINT_A);
+    await subscribe(hub.port, ENDPOINT_B);
+
+    const reply = await postRaw(hub.port, '/hub/push/test', '');
+    expect(reply.status).toBe(204);
+    expect(sent).toEqual([
+      { endpoint: ENDPOINT_A, payload: { title: 'watodo', body: 'Notifications are on', url: '/' } },
+      { endpoint: ENDPOINT_B, payload: { title: 'watodo', body: 'Notifications are on', url: '/' } },
+    ]);
+  });
+
+  test('a subscription the push service answers 410 is removed', async () => {
+    const hub = await startPushHub({
+      disabled: true,
+      send: async (subscription) => {
+        if (subscription.endpoint === ENDPOINT_A) throw Object.assign(new Error('gone'), { statusCode: 410 });
+        return { statusCode: 201 };
+      },
+    });
+    await subscribe(hub.port, ENDPOINT_A);
+    await subscribe(hub.port, ENDPOINT_B);
+    expect((await postRaw(hub.port, '/hub/push/test', '')).status).toBe(204);
+    expect(await endpointsOnDisk()).toEqual([ENDPOINT_B]);
+  });
+});
+
+describe('push: notifier timer', () => {
+  let errors: MockInstance<typeof console.error>;
+
+  beforeEach(async () => {
+    await mkdir(dataDir, { recursive: true });
+    errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test('sends a due notification once, records it, and hands the sent log back to plan', async () => {
+    await writeFile(path.join(dataDir, 'watodo.json'), '{"data":true}');
+    const plan = vi.fn((_json: string, _at: Date, sent: { key: string }[]) => (
+      sent.some((record) => record.key === 'k')
+        ? null
+        : { kind: 'recap', key: 'k', title: 'Title', body: 'Body', url: '/x' }
+    ));
+    const send = vi.fn(async (_subscription: { endpoint: string }, _payload: unknown) => ({ statusCode: 201 }));
+    const hub = await startPushHub({ intervalMs: 5, now: () => NOW, plan, send });
+    await subscribe(hub.port, ENDPOINT_A);
+
+    await waitUntil(async () => (await readFileJson('sent.json')) !== undefined);
+    await waitUntil(() => plan.mock.calls.length >= 3);
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][1]).toEqual({ title: 'Title', body: 'Body', url: '/x', tag: 'k' });
+    expect(plan.mock.calls[0][0]).toBe('{"data":true}');
+    expect(plan.mock.calls[0][1].getTime()).toBe(NOW.getTime());
+    expect(plan.mock.calls.at(-1)?.[2]).toEqual([{ kind: 'recap', key: 'k', at: NOW.getTime() }]);
+  });
+
+  test('does nothing without subscriptions, then plans once one arrives', async () => {
+    await writeFile(path.join(dataDir, 'watodo.json'), '{}');
+    const plan = vi.fn(() => null);
+    const hub = await startPushHub({ intervalMs: 5, now: () => NOW, plan });
+    await sleep(50);
+    expect(plan).not.toHaveBeenCalled();
+
+    await subscribe(hub.port, ENDPOINT_A);
+    await waitUntil(() => plan.mock.calls.length > 0);
+  });
+
+  test('does nothing without the data file', async () => {
+    const plan = vi.fn(() => null);
+    const hub = await startPushHub({ intervalMs: 5, now: () => NOW, plan });
+    await subscribe(hub.port, ENDPOINT_A);
+    await sleep(50);
+    expect(plan).not.toHaveBeenCalled();
+
+    await writeFile(path.join(dataDir, 'watodo.json'), '{}');
+    await waitUntil(() => plan.mock.calls.length > 0);
+  });
+
+  test('removes a subscription the push service answers 410 to, and keeps the others', async () => {
+    await writeFile(path.join(dataDir, 'watodo.json'), '{}');
+    const send = vi.fn(async (subscription: { endpoint: string }) => {
+      if (subscription.endpoint === ENDPOINT_A) throw Object.assign(new Error('gone'), { statusCode: 410 });
+      return { statusCode: 201 };
+    });
+    const hub = await startPushHub({ intervalMs: 5, now: () => NOW, plan: () => ({ kind: 'recap', key: 'k', title: 'T', body: 'B', url: '/' }), send });
+    await subscribe(hub.port, ENDPOINT_A);
+    await subscribe(hub.port, ENDPOINT_B);
+
+    await waitUntil(async () => (await endpointsOnDisk()).length === 1);
+    expect(await endpointsOnDisk()).toEqual([ENDPOINT_B]);
+    expect(send.mock.calls.map(([subscription]) => subscription.endpoint)).toContain(ENDPOINT_B);
+  });
+
+  test('a plan that throws is logged, and the timer keeps running', async () => {
+    await writeFile(path.join(dataDir, 'watodo.json'), 'not json');
+    const plan = vi.fn((): null => {
+      if (plan.mock.calls.length === 1) throw new SyntaxError('Unexpected end of JSON input');
+      return null;
+    });
+    const hub = await startPushHub({ intervalMs: 5, now: () => NOW, plan });
+    await subscribe(hub.port, ENDPOINT_A);
+
+    await waitUntil(() => plan.mock.calls.length >= 3);
+    expect(errors).toHaveBeenCalledWith('watodo push: notifier tick failed', expect.any(SyntaxError));
+    expect((await rawRequest(hub.port, 'GET', '/hub/push/key')).status).toBe(200);
+  });
+
+  test('a missing plan file is logged once and ticks are skipped', async () => {
+    await writeFile(path.join(dataDir, 'watodo.json'), '{}');
+    const missing = path.join(dataDir, 'missing-notify-entry.js');
+    const hub = await startPushHub({ intervalMs: 5, now: () => NOW, planPath: missing });
+    await subscribe(hub.port, ENDPOINT_A);
+
+    await waitUntil(() => errors.mock.calls.length > 0);
+    await sleep(50);
+    const messages = errors.mock.calls.filter((call) => String(call[0]).includes('notifications are paused'));
+    expect(messages).toHaveLength(1);
+    expect(await readFileJson('sent.json')).toBeUndefined();
+    await hub.close();
+  });
+
+  test('sent.json keeps 14 days and drops older records when it is written', async () => {
+    await writeFile(path.join(dataDir, 'watodo.json'), '{}');
+    await writeFile(path.join(dataDir, 'sent.json'), JSON.stringify([
+      { kind: 'recap', key: 'old', at: NOW.getTime() - 15 * DAY_MS },
+      { kind: 'recap', key: 'recent', at: NOW.getTime() - 13 * DAY_MS },
+    ]));
+    const hub = await startPushHub({
+      intervalMs: 5,
+      now: () => NOW,
+      plan: (_json, _at, sent) => (sent.some((record) => record.key === 'new') ? null : { kind: 'recap', key: 'new', title: 'T', body: 'B', url: '/' }),
+      send: async () => ({ statusCode: 201 }),
+    });
+    await subscribe(hub.port, ENDPOINT_A);
+
+    await waitUntil(async () => ((await readFileJson('sent.json')) as { key: string }[]).some((record) => record.key === 'new'));
+    expect(await readFileJson('sent.json')).toEqual([
+      { kind: 'recap', key: 'recent', at: NOW.getTime() - 13 * DAY_MS },
+      { kind: 'recap', key: 'new', at: NOW.getTime() },
+    ]);
+    await hub.close();
+  });
+
+  test('close() stops the timer', async () => {
+    await writeFile(path.join(dataDir, 'watodo.json'), '{}');
+    const plan = vi.fn(() => null);
+    const hub = await startPushHub({ intervalMs: 5, now: () => NOW, plan });
+    await subscribe(hub.port, ENDPOINT_A);
+    await waitUntil(() => plan.mock.calls.length >= 2);
+
+    await hub.close();
+    const calls = plan.mock.calls.length;
+    await sleep(50);
+    expect(plan.mock.calls.length).toBe(calls);
   });
 });

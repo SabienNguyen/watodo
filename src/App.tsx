@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ComponentType } from 'react'
 import { setupState } from '@/domain'
 import { Button } from '@/components/ui/button'
@@ -20,6 +20,12 @@ const SCREENS = {
 type Tab = keyof typeof SCREENS
 const TABS = Object.keys(SCREENS) as Tab[]
 
+/** The tab named by `?tab=` in the address, matched without case (`?tab=progress`), or null. */
+function tabFromUrl(): Tab | null {
+  const wanted = new URLSearchParams(window.location.search).get('tab')?.toLowerCase()
+  return TABS.find(name => name.toLowerCase() === wanted) ?? null
+}
+
 // The tab bar is 3.5rem tall plus the bottom safe-area inset (the iPhone home indicator); keep toasts 4.5rem up so they sit just above it.
 const TOAST_OFFSET = { bottom: 'calc(4.5rem + env(safe-area-inset-bottom))' }
 
@@ -27,7 +33,15 @@ export default function App() {
   const { store } = useWatodo()
   // Subscribes to store changes, so the app re-renders when setup finishes.
   useSnapshot()
-  const [tab, setTab] = useState<Tab>('Now')
+  const [tab, setTab] = useState<Tab>(() => tabFromUrl() ?? 'Now')
+
+  // The parameter is only for opening the app on a tab (a notification's link), so it is taken out of the address.
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    if (!url.searchParams.has('tab')) return
+    url.searchParams.delete('tab')
+    window.history.replaceState(window.history.state, '', url)
+  }, [])
 
   if (setupState(store) !== 'done') {
     return (
