@@ -2,7 +2,7 @@
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import {
-  addPastEntry, confirmDay, createWatodoStore, dayKeyOf, deleteActivity, deleteTemplate, draftFromStarter,
+  addActivityToSection, addPastEntry, confirmDay, createWatodoStore, dayKeyOf, deleteActivity, deleteTemplate, draftFromStarter,
   finishSetup, goToSlot, logActivity, readSnapshot, saveTemplate, setActivityCommitted, setUpStarter, type Clock,
   type Id, type WatodoStore,
 } from '@/domain'
@@ -598,5 +598,22 @@ describe('deleted names', () => {
     expect(screen.getByRole('heading', { name: 'Sat 10 Oct' })).toBeInTheDocument()
     expect(screen.getByText('Weekend')).toBeInTheDocument()
     expect(screen.queryByText('(removed)')).toBeNull()
+  })
+
+  test('the add-entry form for a past day offers a temporary activity that was in the slot that day, not one that ended before', () => {
+    const store = seededStore()
+    addActivityToSection(store, sectionId(store, 'Post dinner'), 'Swim', { until: '2026-10-10' })
+    addActivityToSection(store, sectionId(store, 'Post dinner'), 'Dance', { until: '2026-10-09' })
+    renderWithWatodo(<JournalScreen />, { store, clock: MONDAY_1745 })
+    previousDay()
+    previousDay()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add entry' }))
+    const dialog = screen.getByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText('Slot'), { target: { value: sectionId(store, 'Post dinner') } })
+
+    const offered = within(dialog).getAllByRole('option').map(option => option.textContent)
+    expect(offered).toContain('Swim')
+    expect(offered).not.toContain('Dance')
   })
 })

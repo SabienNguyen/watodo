@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import {
-  dotStrip, entrySlotName, fullDayView, journalByDay, journalDay, nowView, progress, sectionActivities,
-  sectionsOfActivity, templatesUsingSection,
+  dotStrip, entrySlotName, fullDayView, journalByDay, journalDay, listingActive, nowView, progress,
+  sectionActivities, sectionListings, sectionsOfActivity, shownActivities, templatesUsingSection,
 } from './views'
 import type { NowView } from './views'
 import type {
@@ -519,6 +519,74 @@ describe('sectionsOfActivity', () => {
   test('an activity no slot lists gives an empty array', () => {
     const snap = fixture({ activities: [...activities, { id: 'yoga', name: 'Yoga', committed: false }] })
     expect(sectionsOfActivity(snap, 'yoga')).toEqual([])
+  })
+})
+
+describe('temporary listings', () => {
+  const yoga: Activity = { id: 'yoga', name: 'Yoga', committed: false, temporary: true }
+  const yogaListing: Listing = { sectionId: 'postWork', activityId: 'yoga', position: 3, until: '2026-10-12' }
+  const withYoga = fixture({ activities: [...activities, yoga], listings: [...listings, yogaListing] })
+  const namesOf = (list: Activity[]) => list.map(activity => activity.name)
+  const shownNames = (view: NowView) => view.activities.map(({ activity }) => activity.name)
+
+  test('listingActive is true for a listing with no until, and up to and including its until day', () => {
+    expect(listingActive({ sectionId: 'postWork', activityId: 'gym', position: 0 }, '2030-01-01')).toBe(true)
+    expect(listingActive(yogaListing, '2026-10-11')).toBe(true)
+    expect(listingActive(yogaListing, '2026-10-12')).toBe(true)
+    expect(listingActive(yogaListing, '2026-10-13')).toBe(false)
+  })
+
+  test('nowView shows a temporary listing on its until day and hides it the day after', () => {
+    expect(shownNames(nowView(withYoga, at(2026, OCT, 12, 18, 0)))).toContain('Yoga')
+    expect(shownNames(nowView(withYoga, at(2026, OCT, 13, 18, 0)))).not.toContain('Yoga')
+  })
+
+  test('nowView counts 01:00 on the next calendar day as the until day, and 05:00 as the day after', () => {
+    expect(shownNames(nowView(withYoga, at(2026, OCT, 13, 1, 0)))).toContain('Yoga')
+    expect(shownNames(nowView(withYoga, at(2026, OCT, 13, 5, 0)))).not.toContain('Yoga')
+  })
+
+  test('sectionActivities with a day lists only the listings active on it, and without one lists them all', () => {
+    expect(namesOf(sectionActivities(withYoga, 'postWork', '2026-10-12'))).toEqual(['Gym', 'Walk', 'Read', 'Yoga'])
+    expect(namesOf(sectionActivities(withYoga, 'postWork', '2026-10-13'))).toEqual(['Gym', 'Walk', 'Read'])
+    expect(namesOf(sectionActivities(withYoga, 'postWork'))).toEqual(['Gym', 'Walk', 'Read', 'Yoga'])
+  })
+
+  test('sectionsOfActivity with a day lists the slots where the activity is active on it', () => {
+    expect(sectionsOfActivity(withYoga, 'yoga', '2026-10-12').map(section => section.name)).toEqual(['Post work'])
+    expect(sectionsOfActivity(withYoga, 'yoga', '2026-10-13')).toEqual([])
+    expect(sectionsOfActivity(withYoga, 'yoga').map(section => section.name)).toEqual(['Post work'])
+  })
+
+  test('sectionListings gives the until of a temporary listing and null for a permanent one, in listing order', () => {
+    const onUntil = sectionListings(withYoga, 'postWork', '2026-10-12')
+    expect(onUntil.map(({ activity, until }) => [activity.name, until])).toEqual([
+      ['Gym', null], ['Walk', null], ['Read', null], ['Yoga', '2026-10-12'],
+    ])
+    expect(sectionListings(withYoga, 'postWork', '2026-10-13').map(({ activity }) => activity.name))
+      .toEqual(['Gym', 'Walk', 'Read'])
+  })
+
+  test('shownActivities hides a temporary activity with no active listing, and shows it while one is active', () => {
+    const nap: Activity = { id: 'nap', name: 'Nap', committed: false, temporary: true }
+    const snap = fixture({ activities: [...activities, yoga, nap], listings: [...listings, yogaListing] })
+
+    expect(namesOf(shownActivities(snap, '2026-10-12'))).toEqual(
+      ['Gym', 'Walk', 'Read', 'Guitar', 'Call family', 'Journal', 'Stretch', 'Yoga'],
+    )
+    expect(namesOf(shownActivities(snap, '2026-10-13'))).toEqual(
+      ['Gym', 'Walk', 'Read', 'Guitar', 'Call family', 'Journal', 'Stretch'],
+    )
+  })
+
+  test('progress still counts the entries of an expired temporary activity', () => {
+    const snap = fixture({
+      activities: [...activities, yoga], listings: [...listings, yogaListing],
+      journal: [entry('yogaDone', 'yoga', 'postWork', at(2026, OCT, 5, 8, 0))],
+    })
+    const view = progress(snap, '2026-10-01', '2026-10-31')
+    expect(view.byActivity).toEqual([{ activityId: 'yoga', count: 1 }])
+    expect(view.bySection).toEqual([{ sectionId: 'postWork', count: 1 }])
   })
 })
 

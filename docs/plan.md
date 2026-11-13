@@ -942,3 +942,47 @@ Stored as store values `notifySlot`, `notifyCommitted`, `notifyCheckIn`, `notify
 
 ### Task 36: the weekly recap in Progress
 With tests.
+
+---
+
+# Change 15: temporary activities
+
+See "Temporary activities" in `docs/spec.md`.
+
+## Contracts
+
+### `src/domain/rules/types.ts`
+```ts
+export interface Activity { id: Id; name: string; committed: boolean; restDays?: number; temporary?: boolean } // temporary: created for a while; true only
+export interface Listing { sectionId: Id; activityId: Id; position: number; until?: DayKey }             // until: last day it is in the slot; absent = for good
+```
+
+### `src/domain/rules/views.ts` (changes)
+```ts
+export function listingActive(listing: Listing, day: DayKey): boolean;                // until absent, or day <= until
+export function sectionActivities(snap: Snapshot, sectionId: Id, day?: DayKey): Activity[];  // with `day`, only listings active on that day
+export function sectionsOfActivity(snap: Snapshot, activityId: Id, day?: DayKey): Section[]; // same
+export function sectionListings(snap: Snapshot, sectionId: Id, day: DayKey): { activity: Activity; until: DayKey | null }[]; // active on day, listing order (for the slot view)
+export function shownActivities(snap: Snapshot, day: DayKey): Activity[];             // live activities minus temporary ones with no listing active on day
+```
+`nowView` and `fullDayView` pass their day. `notify.ts` `rested` passes today. Without `day`, behaviour is unchanged (every listing).
+
+### `src/domain/menu.ts` (changes)
+```ts
+export function addActivityToSection(store, sectionId, name, options?: { committed?: boolean; until?: DayKey }): Id;
+```
+- Without `until` (Keep): as now, and the listing becomes permanent (its `until` cell is removed if present), and the activity's `temporary` cell is removed.
+- With `until`: an activity that was not live before the call (new or brought back) gets `temporary: true` (and `committed` from options as now). The listing: none -> created with `until`; permanent -> left permanent; temporary -> `until` becomes the later of the two.
+- `setActivityInSection(..., true)` makes that listing permanent and removes the activity's `temporary` cell.
+`store.ts` reads `until` (a string) on listings and `temporary` (true) on activities.
+
+### UI
+- Now: the add field's `extra` gains, after `Committed`, a three-way choice `Keep` / `Today` / `Until` (a small segmented group of buttons, `aria-pressed`), and when `Until` is chosen a date input (`<input type="date">`, aria-label `Until`, min today) defaulting to the coming Sunday (`weekStartOf(today) + 6`, or `+ 13` on a Sunday). `Today` passes `until: today`; the choice resets to `Keep` after each add.
+- Edit slot view: lists `sectionListings(snap, section.id, today)`; a temporary one shows `until {dayLabel(until)}` in muted text after the name.
+- Edit Activities tab lists `shownActivities(snap, today)`. Activity view's slot checklist uses `sectionsOfActivity(snap, id, today)`.
+- Journal add-entry form: `sectionActivities(snap, sectionId, viewedDay)`.
+
+## Tasks
+
+### Task 37: temporary activities in the rules and domain
+### Task 38: temporary activities on screen

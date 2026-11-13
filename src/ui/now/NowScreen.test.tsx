@@ -569,3 +569,104 @@ describe('what is left in a slot, and adding from Now', () => {
     expect(activityButton('Gym')).toHaveTextContent('last: never')
   })
 })
+
+describe('temporary activities from the add field', () => {
+  // The clock moves on in these tests; the screen re-reads it when the timers advance (every 30 seconds).
+  let now: Date
+  const movingClock: Clock = () => now
+
+  beforeEach(() => {
+    now = new Date(2026, 9, 12, 17, 45)
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  })
+
+  afterEach(() => {
+    toast.dismiss()
+    vi.useRealTimers()
+  })
+
+  /** Moves the clock to `at` and lets the screen read it again. */
+  function moveTo(at: Date) {
+    now = at
+    act(() => { vi.advanceTimersByTime(30_000) })
+  }
+
+  /** Opens the + field in Post work, names the activity, presses the choice (unless Keep) and Add. */
+  function addToPostWork(name: string, choice: 'Today' | 'Until' | 'Keep' = 'Keep') {
+    fireEvent.click(screen.getByRole('button', { name: 'Add activity' }))
+    if (choice !== 'Keep') fireEvent.click(screen.getByRole('button', { name: choice }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'New activity in Post work' }), { target: { value: name } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+  }
+
+  test('Today lists the activity in the slot now, and it is gone after the next 4am', () => {
+    renderNow({ clock: movingClock })
+
+    addToPostWork('Swim', 'Today')
+    expect(activityButton('Swim')).toBeInTheDocument()
+
+    moveTo(new Date(2026, 9, 13, 3, 59))
+    expect(activityButton('Swim')).toBeInTheDocument()
+
+    moveTo(new Date(2026, 9, 13, 4, 0))
+    expect(screen.queryByRole('button', { name: /Swim/ })).toBeNull()
+  })
+
+  test('Until defaults to the coming Sunday, 18 Oct, and its earliest day is today', () => {
+    renderNow({ clock: movingClock })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add activity' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Until' }))
+
+    expect(screen.getByLabelText('Until')).toHaveValue('2026-10-18')
+    expect(screen.getByLabelText('Until')).toHaveAttribute('min', '2026-10-12')
+  })
+
+  test('on a Sunday, Until defaults to the Sunday after, 25 Oct', () => {
+    now = new Date(2026, 9, 18, 17, 45)
+    renderNow({ clock: movingClock })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add activity' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Until' }))
+
+    expect(screen.getByLabelText('Until')).toHaveValue('2026-10-25')
+  })
+
+  test('Until keeps the activity through that Sunday, and it is gone on the Monday after', () => {
+    renderNow({ clock: movingClock })
+
+    addToPostWork('Swim', 'Until')
+    expect(activityButton('Swim')).toBeInTheDocument()
+
+    moveTo(new Date(2026, 9, 18, 23, 0))
+    expect(activityButton('Swim')).toBeInTheDocument()
+
+    moveTo(new Date(2026, 9, 19, 10, 0))
+    expect(screen.queryByRole('button', { name: /Swim/ })).toBeNull()
+  })
+
+  test('the choice goes back to Keep after an add', () => {
+    renderNow({ clock: movingClock })
+    addToPostWork('Swim', 'Today')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add activity' }))
+
+    expect(screen.getByRole('button', { name: 'Keep' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Today' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'Until' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.queryByLabelText('Until')).toBeNull()
+  })
+
+  test('Add is disabled while Until has no date', () => {
+    renderNow({ clock: movingClock })
+    fireEvent.click(screen.getByRole('button', { name: 'Add activity' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Until' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'New activity in Post work' }), { target: { value: 'Swim' } })
+
+    fireEvent.change(screen.getByLabelText('Until'), { target: { value: '' } })
+
+    expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('Until'), { target: { value: '2026-10-14' } })
+    expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled()
+  })
+})

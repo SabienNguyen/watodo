@@ -39,6 +39,17 @@ Some things you do use up the slot they are done in; others do not.
 - When a slot lists activities but none is left to show, the Now screen shows a `Next slot` button that moves to the next slot that is not spent. Nothing moves on by itself.
 - **Adding from the Now screen**: a `+` button under the current slot's activities opens a field to add an activity to that slot, with a `Committed` checkbox, the same as in the slot's editing view. Adding does not log it.
 
+## Temporary activities
+
+For days that do not follow the usual routine, an activity can be put in a slot for a while instead of for good.
+
+- The Now screen's add field has a choice next to `Committed`: `Keep` (the default: in the slot for good, as before), `Today` (in the slot until the day ends), or `Until` with a date (in the slot through that day; it starts on the coming Sunday, or the Sunday after when today is Sunday).
+- When the time is up, the activity leaves that slot by itself. Its entries stay in the Journal, the weekly recap and Progress, which count it like any other activity.
+- An activity created this way is temporary: once it is in no slot any more, it is not listed in Edit's Activities tab. Adding it again with `Keep`, or ticking a slot for it in its editing view, makes it a regular activity.
+- Adding an activity you already have with `Today` or `Until` only puts it in that slot for that time; the activity itself is unchanged, and a slot it is already in for good keeps it for good. Adding it again with a later date extends the time; `Keep` makes the placement permanent.
+- In a slot's editing view, a temporary placement shows `until {day}` next to the activity's name, and can be removed like any other.
+- The Journal's add-entry form for a day offers the activities that were in the slot on that day.
+
 ## Names and deleting
 
 - **Deleted things keep their names.** Deleting an activity, a slot or a template removes it from every menu, list and picker, but its name is kept so the Journal and Progress still show it. A deleted activity still counts in Progress `By activity`, and a deleted slot in `By slot`. Adding an activity or slot with the same name as a deleted one brings that one back, with its history.

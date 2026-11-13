@@ -2,7 +2,7 @@
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import {
-  addLabel, addSection, blankDraft, createWatodoStore, deleteActivity, deleteLabel, deleteSection,
+  addActivityToSection, addLabel, addSection, blankDraft, createWatodoStore, deleteActivity, deleteLabel, deleteSection,
   deleteTemplate, finishSetup, readSnapshot, saveTemplate, setActivityCommitted, setActivityRestDays, setUpStarter,
   type Id, type WatodoStore,
 } from '@/domain'
@@ -1270,4 +1270,43 @@ describe('Rest days', () => {
 
     expect(screen.getByRole('spinbutton', { name: 'Rest days' })).toHaveValue(7)
   })
+
+  test('a slot shows a temporary activity with its last day, and a permanent one with no day', () => {
+    const store = finishedStore()
+    addActivityToSection(store, slotId(store, 'Post work'), 'Swim', { until: '2026-10-18' })
+    renderEdit(store)
+
+    tapRow('Post work')
+
+    expect(within(screen.getByText('Swim').closest('li') as HTMLElement).getByText('until Sun 18 Oct')).toBeInTheDocument()
+    expect(screen.getByText('Gym').closest('li')).not.toHaveTextContent('until')
+  })
+
+  test('the Activities tab lists a temporary activity while it is in a slot', () => {
+    const store = finishedStore()
+    addActivityToSection(store, slotId(store, 'Post work'), 'Swim', { until: '2026-10-18' })
+    renderEdit(store)
+
+    pressTab('Activities')
+
+    expect(screen.getByRole('button', { name: 'Swim' })).toBeInTheDocument()
+  })
+
+  test('the Activities tab hides a temporary activity whose time is up', () => {
+    const store = finishedStore()
+    addActivityToSection(store, slotId(store, 'Post work'), 'Swim', { until: '2026-10-11' })
+    renderEdit(store)
+
+    pressTab('Activities')
+
+    expect(screen.queryByRole('button', { name: 'Swim' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Gym' })).toBeInTheDocument()
+  })
 })
+
+/** The id of the slot with this name. */
+function slotId(store: WatodoStore, name: string): Id {
+  const section = readSnapshot(store).sections.find(candidate => candidate.name === name)
+  if (!section) throw new Error(`no section ${name}`)
+  return section.id
+}

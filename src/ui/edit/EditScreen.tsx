@@ -2,16 +2,18 @@ import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'rea
 import { ChevronLeftIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import {
-  addActivity, addLabel, addSection, addActivityToSection, deleteActivity, deleteLabel, deleteSection, deleteTemplate,
-  draftFromTemplate, removeActivityFromSection, renameActivity, renameLabel, renameSection, sectionsOfActivity,
-  setActivityCommitted, setActivityInSection, setActivityRestDays, setDefaultTemplate, setLabelWeekdays,
-  templatesUsingSection, type Activity, type Id, type Label, type Section, type Snapshot, type TemplateDraft,
+  addActivity, addLabel, addSection, addActivityToSection, dayKeyOf, deleteActivity, deleteLabel, deleteSection,
+  deleteTemplate, draftFromTemplate, removeActivityFromSection, renameActivity, renameLabel, renameSection,
+  sectionListings, sectionsOfActivity, setActivityCommitted, setActivityInSection, setActivityRestDays,
+  setDefaultTemplate, setLabelWeekdays, shownActivities, templatesUsingSection, type Activity, type Id, type Label,
+  type Section, type Snapshot, type TemplateDraft,
 } from '@/domain'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { useSnapshot, useWatodo } from '@/ui/hooks'
+import { dayLabel } from '@/ui/format'
+import { useNowDate, useSnapshot, useWatodo } from '@/ui/hooks'
 import { AddField, EditableText, RestDaysField } from './fields'
 import { NameRow } from './NameRow'
 import { NotificationsPart } from './NotificationsPart'
@@ -201,17 +203,13 @@ function SlotsPart({ onOpen }: { onOpen(id: Id): void }) {
 function SlotView({ part, section, onBack }: { part: Part; section: Section; onBack(): void }) {
   const { store } = useWatodo()
   const snap = useSnapshot()
+  const today = dayKeyOf(useNowDate())
   // Whether the delete dialog is open.
   const [deleting, setDeleting] = useState(false)
   // Whether the activity added next is committed. Unticked after each add.
   const [committed, setCommitted] = useState(false)
   const using = templatesUsingSection(snap, section.id)
-  const activities = snap.listings
-    .filter(listing => listing.sectionId === section.id)
-    .flatMap(listing => {
-      const activity = snap.activities.find(candidate => candidate.id === listing.activityId)
-      return activity === undefined ? [] : [activity]
-    })
+  const listings = sectionListings(snap, section.id, today)
 
   return (
     <EditingFrame part={part} heading={section.name} onBack={onBack}>
@@ -229,9 +227,10 @@ function SlotView({ part, section, onBack }: { part: Part; section: Section; onB
       </div>
 
       <ul className="flex flex-col gap-2">
-        {activities.map(activity => (
+        {listings.map(({ activity, until }) => (
           <li key={activity.id} className="flex items-center gap-2">
             <span className="min-w-0 flex-1 truncate">{activity.name}</span>
+            {until !== null && <span className="shrink-0 text-sm text-muted-foreground">{`until ${dayLabel(until)}`}</span>}
             {activity.committed && <Badge variant="secondary" className="shrink-0">committed</Badge>}
             <Button
               variant="ghost"
@@ -309,10 +308,11 @@ function SlotView({ part, section, onBack }: { part: Part; section: Section; onB
 function ActivitiesPart({ onOpen }: { onOpen(id: Id): void }) {
   const { store } = useWatodo()
   const snap = useSnapshot()
+  const today = dayKeyOf(useNowDate())
   // The search text is plain component state: it resets when the tab or an activity's view is left.
   const [search, setSearch] = useState('')
   const query = search.trim().toLowerCase()
-  const activities = [...snap.activities]
+  const activities = shownActivities(snap, today)
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
     .filter(activity => activity.name.toLowerCase().includes(query))
 
@@ -361,8 +361,9 @@ function ActivityView({ part, activity, onBack }: { part: Part; activity: Activi
   const snap = useSnapshot()
   // Whether the delete dialog is open.
   const [deleting, setDeleting] = useState(false)
+  const today = dayKeyOf(useNowDate())
   const slotsHeading = useId()
-  const listed = new Set(sectionsOfActivity(snap, activity.id).map(section => section.id))
+  const listed = new Set(sectionsOfActivity(snap, activity.id, today).map(section => section.id))
 
   return (
     <EditingFrame part={part} heading={activity.name} onBack={onBack}>

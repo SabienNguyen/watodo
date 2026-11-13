@@ -1,6 +1,6 @@
 // Private to src/domain: the only place that knows table, value and cell names.
 import type { MergeableStore } from 'tinybase';
-import { nameKey, type Id, type NotifyKind } from './rules';
+import { nameKey, type DayKey, type Id, type NotifyKind } from './rules';
 
 export const TABLE = {
   labels: 'labels',
@@ -117,8 +117,8 @@ export function ensureSection(store: MergeableStore, name: string): Id {
 }
 
 /**
- * The live activity with this name's key, else a deleted one brought back (quick, with no rest days),
- * else a new quick one.
+ * The live activity with this name's key, else a deleted one brought back (quick, with no rest days and
+ * not temporary), else a new quick one.
  */
 export function ensureActivity(store: MergeableStore, name: string): Id {
   const found = findByKey(store, TABLE.activities, name);
@@ -127,6 +127,7 @@ export function ensureActivity(store: MergeableStore, name: string): Id {
       store.delCell(TABLE.activities, found.id, 'deleted');
       store.delCell(TABLE.activities, found.id, 'committed');
       store.delCell(TABLE.activities, found.id, 'restDays');
+      store.delCell(TABLE.activities, found.id, 'temporary');
     }
     return found.id;
   }
@@ -139,6 +140,30 @@ export function ensureListing(store: MergeableStore, sectionId: Id, activityId: 
   const id = listingId(sectionId, activityId);
   if (store.hasRow(TABLE.listings, id)) return;
   store.setRow(TABLE.listings, id, { sectionId, activityId, position: nextPosition(store, TABLE.listings) });
+}
+
+/**
+ * Lists the activity in the slot until `until`. A new listing gets it; a permanent one stays permanent;
+ * a temporary one is extended when `until` is later, and never shortened.
+ */
+export function ensureTemporaryListing(store: MergeableStore, sectionId: Id, activityId: Id, until: DayKey): void {
+  const id = listingId(sectionId, activityId);
+  if (!store.hasRow(TABLE.listings, id)) {
+    store.setRow(TABLE.listings, id, { sectionId, activityId, position: nextPosition(store, TABLE.listings), until });
+    return;
+  }
+  const current = store.getCell(TABLE.listings, id, 'until');
+  if (typeof current !== 'string') return;
+  if (until > current) store.setCell(TABLE.listings, id, 'until', until);
+}
+
+/** Makes the activity's listing in the slot permanent, and the activity itself no longer temporary. */
+export function keepInSection(store: MergeableStore, sectionId: Id, activityId: Id): void {
+  store.transaction(() => {
+    ensureListing(store, sectionId, activityId);
+    store.delCell(TABLE.listings, listingId(sectionId, activityId), 'until');
+    store.delCell(TABLE.activities, activityId, 'temporary');
+  });
 }
 
 export function templateExists(store: MergeableStore, templateId: Id): boolean {

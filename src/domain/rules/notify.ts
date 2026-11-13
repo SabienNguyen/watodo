@@ -222,7 +222,7 @@ function restedDue(context: Context): DueNotification[] {
       kind: 'rested',
       key: `rested:${activity.id}:${last.id}`,
       title: `${activity.name} is back`,
-      body: sectionsOfActivity(snap, activity.id).map(section => section.name).join(' · '),
+      body: sectionsOfActivity(snap, activity.id, today).map(section => section.name).join(' · '),
       url: '/',
     }]
   })

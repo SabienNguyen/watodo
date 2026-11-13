@@ -104,23 +104,27 @@ const readSection: RowReader<Section> = (id, row) => {
   return { id, name, position };
 };
 
-/** An activity with no `committed` cell is quick, and one with no `restDays` cell never rests. */
+/** An activity with no `committed` cell is quick, and one with no `restDays` cell never rests. Only a `temporary` cell of true counts. */
 const readActivity: RowReader<Activity> = (id, row) => {
   const name = text(row, 'name');
   if (name === undefined) return undefined;
   const restDays = num(row, 'restDays');
   const rests = restDays !== undefined && Number.isFinite(restDays) && restDays >= 1;
+  const temporary = flag(row, 'temporary') === true;
   return {
     id, name, committed: flag(row, 'committed') === true, ...(rests ? { restDays } : {}),
+    ...(temporary ? { temporary } : {}),
   };
 };
 
+/** A listing with no `until` cell (or one that is not a string) is for good. */
 const readListing: RowReader<Listing> = (_id, row) => {
   const sectionId = text(row, 'sectionId');
   const activityId = text(row, 'activityId');
   const position = num(row, 'position');
   if (sectionId === undefined || activityId === undefined || position === undefined) return undefined;
-  return { sectionId, activityId, position };
+  const until = text(row, 'until');
+  return { sectionId, activityId, position, ...(until === undefined ? {} : { until }) };
 };
 
 const readJournalEntry: RowReader<JournalEntry> = (id, row) => {

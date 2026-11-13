@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { cn } from '@/lib/utils'
 
 type InputProps = Omit<ComponentProps<'input'>, 'value' | 'onChange' | 'onBlur' | 'onKeyDown'>
 
@@ -136,13 +137,17 @@ export function EditableText({ value, onCommit, existing, selfId, ...props }: In
  * With `existing`, close names are offered under the field while typing, and an add whose name is close
  * but not the same as one of them asks first: use that one, or add the new name.
  */
-export function AddField({ label, placeholder, button, extra, onAdd, existing }: {
+export function AddField({ label, placeholder, button, extra, extraBelow = false, onAdd, existing, disabled }: {
   label: string
   placeholder: string
   button: string
   extra?: ReactNode
+  /** Keeps `extra` on its own line under the field at every width, for extras too wide to sit beside it. */
+  extraBelow?: boolean
   onAdd(name: string): void
   existing?: { name: string }[]
+  /** Disables the Add button, and Enter in the field, while the extra choices are incomplete. */
+  disabled?: boolean
 }) {
   const [text, setText] = useState('')
   // The close name that the dialog asks about, or null while it is closed.
@@ -157,7 +162,7 @@ export function AddField({ label, placeholder, button, extra, onAdd, existing }:
   const submit = (event: FormEvent) => {
     event.preventDefault()
     const name = text.trim()
-    if (name === '') return
+    if (name === '' || disabled) return
     const best = existing === undefined ? undefined : closeNames(name, existing)[0]
     if (best === undefined || nameKey(best.name) === nameKey(name)) add(name)
     else setAsking(best.name)
@@ -176,15 +181,16 @@ export function AddField({ label, placeholder, button, extra, onAdd, existing }:
   const form = extra === undefined ? (
     <form onSubmit={submit} className="flex items-center gap-2">
       {field}
-      <Button type="submit" variant="outline" className="shrink-0">{button}</Button>
+      <Button type="submit" variant="outline" className="shrink-0" disabled={disabled}>{button}</Button>
     </form>
   ) : (
-    // Lays out by the form's own width (a container query), at 20rem or more for three columns.
+    // Lays out by the form's own width (a container query), at 20rem or more for three columns
+    // unless `extraBelow` keeps two.
     <form onSubmit={submit} className="@container">
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 @xs:grid-cols-[minmax(8rem,1fr)_auto_auto]">
+      <div className={cn('grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2', !extraBelow && '@xs:grid-cols-[minmax(8rem,1fr)_auto_auto]')}>
         {field}
-        <div className="col-start-1 row-start-2 @xs:col-start-2 @xs:row-start-1">{extra}</div>
-        <Button type="submit" variant="outline" className="col-start-2 row-start-1 @xs:col-start-3">{button}</Button>
+        <div className={cn('col-start-1 row-start-2', extraBelow ? 'col-span-2' : '@xs:col-start-2 @xs:row-start-1')}>{extra}</div>
+        <Button type="submit" variant="outline" className={cn('col-start-2 row-start-1', !extraBelow && '@xs:col-start-3')} disabled={disabled}>{button}</Button>
       </div>
     </form>
   )

@@ -11,8 +11,8 @@ export interface TemplateItem {
   position: number; sectionId?: Id; // sectionId only on slots. No start/end.
 }
 export interface Section { id: Id; name: string; position: number }
-export interface Activity { id: Id; name: string; committed: boolean; restDays?: number } // committed: logging it spends the slot. restDays: whole days >= 1; absent = never rests
-export interface Listing { sectionId: Id; activityId: Id; position: number }
+export interface Activity { id: Id; name: string; committed: boolean; restDays?: number; temporary?: boolean } // committed: logging it spends the slot. restDays: whole days >= 1; absent = never rests. temporary: created for a while; true only
+export interface Listing { sectionId: Id; activityId: Id; position: number; until?: DayKey } // until: last day it is in the slot; absent = for good
 export interface JournalEntry {
   id: Id; activityId: Id; sectionId: Id; loggedAt: number; // epoch ms, recorded but never shown
   itemId?: Id;                     // the slot it was logged in, when known

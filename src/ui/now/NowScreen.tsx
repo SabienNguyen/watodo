@@ -3,8 +3,8 @@ import type { ReactNode } from 'react'
 import { CheckIcon, PlusIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import {
-  activityName, addActivityToSection, deleteEntry, editEntry, entrySlotName, goToSlot, logActivity, nowView,
-  readSnapshot, type Activity, type Id, type PendingLog,
+  activityName, addActivityToSection, addDays, dayKeyOf, deleteEntry, editEntry, entrySlotName, goToSlot, logActivity,
+  nowView, readSnapshot, weekdayOf, weekStartOf, type Activity, type DayKey, type Id, type PendingLog,
 } from '@/domain'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -238,9 +238,14 @@ export function NowScreen() {
 function AddActivity({ slotName, sectionId }: { slotName: string; sectionId: Id }) {
   const { store } = useWatodo()
   const snap = useSnapshot()
+  const today = dayKeyOf(useNowDate())
   const [open, setOpen] = useState(false)
   // Whether the activity added next is committed. Unticked after each add.
   const [committed, setCommitted] = useState(false)
+  // How long the activity added next stays in the slot. Reset to Keep after each add.
+  const [lasts, setLasts] = useState<Lasts>('keep')
+  // The last day of an Until choice. Blank disables Add.
+  const [untilDay, setUntilDay] = useState<DayKey | ''>(() => defaultUntil(today))
 
   return (
     <div className="flex flex-col gap-3">
@@ -261,26 +266,71 @@ function AddActivity({ slotName, sectionId }: { slotName: string; sectionId: Id 
           placeholder="Activity name"
           button="Add"
           existing={snap.activities}
+          disabled={lasts === 'until' && untilDay === ''}
+          extraBelow
           extra={(
-            <label className="flex items-center gap-1.5 text-sm whitespace-nowrap">
-              <input
-                type="checkbox"
-                aria-label="New activity is committed"
-                checked={committed}
-                onChange={event => setCommitted(event.target.checked)}
-              />
-              Committed
-            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-1.5 text-sm whitespace-nowrap">
+                <input
+                  type="checkbox"
+                  aria-label="New activity is committed"
+                  checked={committed}
+                  onChange={event => setCommitted(event.target.checked)}
+                />
+                Committed
+              </label>
+              <div role="group" aria-label="How long it stays" className="flex gap-1">
+                {LASTS.map(choice => {
+                  const pressed = choice.value === lasts
+                  return (
+                    <Button
+                      key={choice.value}
+                      variant={pressed ? 'default' : 'outline'}
+                      size="sm"
+                      aria-pressed={pressed}
+                      onClick={() => setLasts(choice.value)}
+                    >
+                      {choice.label}
+                    </Button>
+                  )
+                })}
+              </div>
+              {lasts === 'until' && (
+                <Input
+                  type="date"
+                  aria-label="Until"
+                  min={today}
+                  value={untilDay}
+                  className="w-auto"
+                  onChange={event => setUntilDay(event.target.value)}
+                />
+              )}
+            </div>
           )}
           onAdd={name => {
-            addActivityToSection(store, sectionId, name, { committed })
+            const until = lasts === 'keep' ? undefined : lasts === 'today' ? today : untilDay
+            addActivityToSection(store, sectionId, name, until === undefined ? { committed } : { committed, until })
             setCommitted(false)
+            setLasts('keep')
             setOpen(false)
           }}
         />
       )}
     </div>
   )
+}
+
+/** How long an activity added from the Now screen stays in its slot. */
+type Lasts = 'keep' | 'today' | 'until'
+const LASTS: { value: Lasts; label: string }[] = [
+  { value: 'keep', label: 'Keep' },
+  { value: 'today', label: 'Today' },
+  { value: 'until', label: 'Until' },
+]
+
+/** The day an Until choice starts on: the coming Sunday, or the Sunday after when today is Sunday. */
+function defaultUntil(today: DayKey): DayKey {
+  return addDays(weekStartOf(today), weekdayOf(today) === 6 ? 13 : 6)
 }
 
 /** After a quick log: Undo and Add note. After a committed log, the slot is spent: Add note only. */

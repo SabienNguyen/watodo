@@ -228,3 +228,30 @@ test('a rename on one side and a new listing on the other both survive a merge b
     expect(snap.listings).toContainEqual(expect.objectContaining({ sectionId: sectionId('Bedtime'), activityId: gymId }));
   }
 });
+
+test('a listing reads its until when it is a string, and is for good otherwise', () => {
+  const store = createWatodoStore();
+  store.setRow('listings', 'a:timed', { sectionId: 'a', activityId: 'timed', position: 0, until: '2026-10-12' });
+  store.setRow('listings', 'a:bad', { sectionId: 'a', activityId: 'bad', position: 1, until: 20261012 });
+  store.setRow('listings', 'a:plain', { sectionId: 'a', activityId: 'plain', position: 2 });
+
+  const listings = readSnapshot(store).listings;
+  expect(listings.find(listing => listing.activityId === 'timed')?.until).toBe('2026-10-12');
+  for (const id of ['bad', 'plain']) {
+    expect(listings.find(listing => listing.activityId === id), id).not.toHaveProperty('until');
+  }
+});
+
+test('an activity reads as temporary only when its temporary cell is true', () => {
+  const store = createWatodoStore();
+  store.setRow('activities', 'yoga', { name: 'Yoga', temporary: true });
+  store.setRow('activities', 'nap', { name: 'Nap', temporary: false });
+  store.setRow('activities', 'walk', { name: 'Walk', temporary: 'yes' });
+  store.setRow('activities', 'plain', { name: 'Plain' });
+
+  const activities = readSnapshot(store).activities;
+  expect(activities.find(activity => activity.id === 'yoga')?.temporary).toBe(true);
+  for (const id of ['nap', 'walk', 'plain']) {
+    expect(activities.find(activity => activity.id === id), id).not.toHaveProperty('temporary');
+  }
+});

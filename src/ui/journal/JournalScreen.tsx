@@ -219,7 +219,8 @@ function AddEntryDialog({ today, initialDay, onClose }: {
   const [note, setNote] = useState('')
   const [minutes, setMinutes] = useState('')
 
-  const activities = sectionId === '' ? [] : sectionActivities(snap, sectionId)
+  // The activities that were in the slot on the day the entry is for, which is the day in the form.
+  const activities = sectionId === '' ? [] : sectionActivities(snap, sectionId, day === '' ? today : day)
   const canSave = day !== '' && day <= today && sectionId !== '' && activityId !== ''
 
   const chooseSection = (next: Id | '') => {
@@ -254,7 +255,10 @@ function AddEntryDialog({ today, initialDay, onClose }: {
             type="date"
             max={today}
             value={day}
-            onChange={e => setDay(e.target.value)}
+            onChange={e => {
+              setDay(e.target.value)
+              setActivityId('')
+            }}
           />
         </div>
         <div className="flex flex-col gap-2">

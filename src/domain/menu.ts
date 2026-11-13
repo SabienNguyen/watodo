@@ -1,7 +1,7 @@
-import { nameKey, type Id } from './rules';
+import { nameKey, type DayKey, type Id } from './rules';
 import type { WatodoStore } from './store';
 import {
-  ensureActivity, ensureListing, ensureSection, findByKey, isLive, liveRowIds, listingId, TABLE,
+  ensureActivity, ensureSection, ensureTemporaryListing, findByKey, isLive, keepInSection, liveRowIds, listingId, TABLE,
 } from './schema';
 
 /** The live section with this name's key, else a deleted one brought back (with no listings), else a new one last. */
@@ -39,14 +39,26 @@ export function deleteSection(store: WatodoStore, id: Id): void {
  * Reuses the live activity with the same name key, and brings back a deleted one. Its committed setting
  * is kept when it was live. An activity that was not live before the call is quick unless
  * `options.committed` is true. Listing it twice adds nothing.
+ *
+ * Without `options.until` (Keep) the listing is for good and the activity is no longer temporary.
+ * With `until` the listing is in the slot through that day: an activity that was not live before the
+ * call is temporary, a permanent listing stays permanent, and a temporary one is extended, never shortened.
  */
-export function addActivityToSection(store: WatodoStore, sectionId: Id, name: string, options?: { committed?: boolean }): Id {
+export function addActivityToSection(
+  store: WatodoStore, sectionId: Id, name: string, options?: { committed?: boolean; until?: DayKey },
+): Id {
   return store.transaction(() => {
     const found = findByKey(store, TABLE.activities, name);
     const wasLive = found !== undefined && !found.deleted;
     const activityId = ensureActivity(store, name);
     if (!wasLive && (options?.committed ?? false)) setActivityCommitted(store, activityId, true);
-    ensureListing(store, sectionId, activityId);
+    const until = options?.until;
+    if (until === undefined) {
+      keepInSection(store, sectionId, activityId);
+    } else {
+      if (!wasLive) store.setCell(TABLE.activities, activityId, 'temporary', true);
+      ensureTemporaryListing(store, sectionId, activityId, until);
+    }
     return activityId;
   });
 }
@@ -61,13 +73,21 @@ export function removeActivityFromSection(store: WatodoStore, sectionId: Id, act
  */
 export function addActivity(store: WatodoStore, name: string): Id {
   if (name.trim() === '') return '';
-  return store.transaction(() => ensureActivity(store, name));
+  return store.transaction(() => {
+    const id = ensureActivity(store, name);
+    // Added on purpose from the Activities tab: a temporary activity becomes a regular one.
+    if (store.hasCell(TABLE.activities, id, 'temporary')) store.delCell(TABLE.activities, id, 'temporary');
+    return id;
+  });
 }
 
-/** Lists the activity at the end of the slot, or removes its listing there. Does nothing for a deleted or unknown activity or slot. */
+/**
+ * Lists the activity at the end of the slot, or removes its listing there. Listing it makes the listing
+ * permanent and the activity no longer temporary. Does nothing for a deleted or unknown activity or slot.
+ */
 export function setActivityInSection(store: WatodoStore, activityId: Id, sectionId: Id, listed: boolean): void {
   if (!isLive(store, TABLE.activities, activityId) || !isLive(store, TABLE.sections, sectionId)) return;
-  if (listed) ensureListing(store, sectionId, activityId);
+  if (listed) keepInSection(store, sectionId, activityId);
   else store.delRow(TABLE.listings, listingId(sectionId, activityId));
 }
 

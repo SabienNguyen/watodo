@@ -6,7 +6,7 @@ import {
 import { activityName, sectionName } from './names'
 import { lastDone } from './lastDone'
 import type {
-  Activity, DayKey, DayRecord, Id, JournalEntry, Section, Snapshot, Template, TemplateItem,
+  Activity, DayKey, DayRecord, Id, JournalEntry, Listing, Section, Snapshot, Template, TemplateItem,
 } from './types'
 
 export interface NowView {
@@ -19,7 +19,7 @@ export interface NowView {
   dayDone: boolean;                      // the template has slots and position is null: every slot is spent
   // of the current slot's section, minus what is logged in this slot occurrence today and what is resting; empty when it is spent
   activities: { activity: Activity; lastDone: JournalEntry | null }[];
-  emptied: boolean;                      // the current slot is open, its section lists activities, and `activities` is empty
+  emptied: boolean;                     // the current slot is open, its section lists activities, and `activities` is empty
   nextSlot: { item: TemplateItem; displayName: string } | null; // first unspent slot after the current one; null when none or no position
 }
 
@@ -51,10 +51,15 @@ export function templatesUsingSection(snap: Snapshot, sectionId: Id): Template[]
     .sort((a, b) => a.position - b.position)
 }
 
-/** The activities listed in a section, in listing position order. */
-export function sectionActivities(snap: Snapshot, sectionId: Id): Activity[] {
+/** True when the listing is in its slot on `day`: it is for good, or `day` is no later than its until. */
+export function listingActive(listing: Listing, day: DayKey): boolean {
+  return listing.until === undefined || day <= listing.until
+}
+
+/** The activities listed in a section, in listing position order. With `day`, only the listings active on that day. */
+export function sectionActivities(snap: Snapshot, sectionId: Id, day?: DayKey): Activity[] {
   return snap.listings
-    .filter(listing => listing.sectionId === sectionId)
+    .filter(listing => listing.sectionId === sectionId && (day === undefined || listingActive(listing, day)))
     .sort((a, b) => a.position - b.position)
     .flatMap(listing => {
       const activity = snap.activities.find(a => a.id === listing.activityId)
@@ -62,14 +67,33 @@ export function sectionActivities(snap: Snapshot, sectionId: Id): Activity[] {
     })
 }
 
-/** The slots that list an activity, in section position order. */
-export function sectionsOfActivity(snap: Snapshot, activityId: Id): Section[] {
+/** The slots that list an activity, in section position order. With `day`, only the listings active on that day. */
+export function sectionsOfActivity(snap: Snapshot, activityId: Id, day?: DayKey): Section[] {
   const listed = new Set(
-    snap.listings.filter(listing => listing.activityId === activityId).map(listing => listing.sectionId),
+    snap.listings
+      .filter(listing => listing.activityId === activityId && (day === undefined || listingActive(listing, day)))
+      .map(listing => listing.sectionId),
   )
   return snap.sections
     .filter(section => listed.has(section.id))
     .sort((a, b) => a.position - b.position)
+}
+
+/** The activities active in a section on `day`, in listing order, each with the day it leaves the slot (null for good). */
+export function sectionListings(snap: Snapshot, sectionId: Id, day: DayKey): { activity: Activity; until: DayKey | null }[] {
+  return snap.listings
+    .filter(listing => listing.sectionId === sectionId && listingActive(listing, day))
+    .sort((a, b) => a.position - b.position)
+    .flatMap(listing => {
+      const activity = snap.activities.find(a => a.id === listing.activityId)
+      return activity ? [{ activity, until: listing.until ?? null }] : []
+    })
+}
+
+/** The live activities, minus the temporary ones that no listing has active on `day`. */
+export function shownActivities(snap: Snapshot, day: DayKey): Activity[] {
+  return snap.activities.filter(activity => !activity.temporary
+    || snap.listings.some(listing => listing.activityId === activity.id && listingActive(listing, day)))
 }
 
 function dayRecordFor(snap: Snapshot, day: DayKey): DayRecord | undefined {
@@ -113,7 +137,7 @@ export function nowView(snap: Snapshot, at: Date): NowView {
   const open = position !== null && !spent.has(position.item.id)
 
   const sectionId = position?.item.sectionId
-  const listed = open && sectionId !== undefined ? sectionActivities(snap, sectionId) : []
+  const listed = open && sectionId !== undefined ? sectionActivities(snap, sectionId, day) : []
   const loggedHere = new Set(
     (position === null ? [] : entriesBySlot(items, todaysEntries).get(position.item.id) ?? [])
       .map(entry => entry.activityId),
@@ -158,7 +182,7 @@ export function fullDayView(snap: Snapshot, at: Date): FullDayView {
       displayName: names.get(item.id) ?? item.name,
       current: item.kind === 'slot' && item.id === currentId,
       activities: item.kind === 'slot' && item.sectionId !== undefined
-        ? sectionActivities(snap, item.sectionId)
+        ? sectionActivities(snap, item.sectionId, now.day)
         : [],
       logged: (loggedBySlot.get(item.id) ?? []).map(entry => ({
         entry,

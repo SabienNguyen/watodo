@@ -421,3 +421,92 @@ test('deleteActivity removes the activity and every listing of it, and keeps its
   expect(snap.journal).toHaveLength(1);
   expect(snap.journal[0].activityId).toBe(read);
 });
+
+test('Today adds a new activity to the slot until that day, and it is temporary', () => {
+  const { store, sectionId } = basicDay();
+  const id = addActivityToSection(store, sectionId('Bedtime'), 'Yoga', { until: '2026-10-12' });
+
+  const snap = readSnapshot(store);
+  expect(snap.activities.find(activity => activity.id === id)).toStrictEqual({ id, name: 'Yoga', committed: false, temporary: true });
+  expect(snap.listings).toContainEqual(expect.objectContaining({ sectionId: sectionId('Bedtime'), activityId: id, until: '2026-10-12' }));
+});
+
+test('adding an existing permanent activity with until leaves the activity permanent', () => {
+  const { store, activityId, sectionId } = basicDay();
+  const gym = activityId('Gym');
+  addActivityToSection(store, sectionId('Bedtime'), 'gym', { until: '2026-10-12' });
+
+  const snap = readSnapshot(store);
+  expect(snap.activities.find(activity => activity.id === gym)).toStrictEqual({ id: gym, name: 'Gym', committed: false });
+  expect(snap.listings).toContainEqual(expect.objectContaining({ sectionId: sectionId('Bedtime'), activityId: gym, until: '2026-10-12' }));
+});
+
+test('a slot an activity is already in for good keeps it for good when it is added with until', () => {
+  const { store, activityId, sectionId } = basicDay();
+  const read = activityId('Read');
+  addActivityToSection(store, sectionId('Bedtime'), 'Read', { until: '2026-10-12' });
+
+  const snap = readSnapshot(store);
+  const listing = snap.listings.find(item => item.activityId === read && item.sectionId === sectionId('Bedtime'));
+  expect(listing).toBeDefined();
+  expect(listing).not.toHaveProperty('until');
+  expect(snap.activities.find(activity => activity.id === read)).not.toHaveProperty('temporary');
+});
+
+test('a temporary listing is extended to a later date and never shortened', () => {
+  const { store, sectionId } = basicDay();
+  const id = addActivityToSection(store, sectionId('Bedtime'), 'Yoga', { until: '2026-10-12' });
+  const untilOf = () => readSnapshot(store).listings.find(item => item.activityId === id)?.until;
+
+  addActivityToSection(store, sectionId('Bedtime'), 'Yoga', { until: '2026-10-15' });
+  expect(untilOf()).toBe('2026-10-15');
+  addActivityToSection(store, sectionId('Bedtime'), 'Yoga', { until: '2026-10-13' });
+  expect(untilOf()).toBe('2026-10-15');
+});
+
+test('Keep after a temporary add makes the listing and the activity permanent', () => {
+  const { store, sectionId } = basicDay();
+  const id = addActivityToSection(store, sectionId('Bedtime'), 'Yoga', { until: '2026-10-12' });
+
+  expect(addActivityToSection(store, sectionId('Bedtime'), 'Yoga')).toBe(id);
+
+  const snap = readSnapshot(store);
+  const listing = snap.listings.find(item => item.activityId === id);
+  expect(listing).toBeDefined();
+  expect(listing).not.toHaveProperty('until');
+  expect(snap.activities.find(activity => activity.id === id)).not.toHaveProperty('temporary');
+});
+
+test('a deleted activity added with until comes back temporary and quick', () => {
+  const { store, activityId, sectionId } = basicDay();
+  const read = activityId('Read');
+  deleteActivity(store, read);
+
+  expect(addActivityToSection(store, sectionId('Bedtime'), 'read', { until: '2026-10-12' })).toBe(read);
+
+  const snap = readSnapshot(store);
+  expect(snap.activities.find(activity => activity.id === read)).toStrictEqual({ id: read, name: 'Read', committed: false, temporary: true });
+});
+
+test('setActivityInSection with true makes the listing permanent and the activity no longer temporary', () => {
+  const { store, sectionId } = basicDay();
+  const id = addActivityToSection(store, sectionId('Bedtime'), 'Yoga', { until: '2026-10-12' });
+
+  setActivityInSection(store, id, sectionId('Bedtime'), true);
+
+  const snap = readSnapshot(store);
+  const listing = snap.listings.find(item => item.activityId === id);
+  expect(listing).toBeDefined();
+  expect(listing).not.toHaveProperty('until');
+  expect(snap.activities.find(activity => activity.id === id)).not.toHaveProperty('temporary');
+});
+
+test('adding a temporary activity again from the Activities tab makes it a regular one', () => {
+  const { store, sectionId } = basicDay();
+  const id = addActivityToSection(store, sectionId('Bedtime'), 'Yoga', { until: '2026-10-12' });
+  expect(readSnapshot(store).activities.find(activity => activity.id === id)?.temporary).toBe(true);
+
+  expect(addActivity(store, 'yoga')).toBe(id);
+
+  expect(readSnapshot(store).activities.find(activity => activity.id === id)?.temporary).toBeUndefined();
+});

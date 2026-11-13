@@ -8,6 +8,7 @@ test('re-exports every rule function and constant', () => {
     'STAY_MS', 'itemsOf', 'slotsOf', 'spentSlots', 'positionAt',
     'lastDone', 'nowView', 'fullDayView',
     'journalByDay', 'progress', 'dotStrip', 'templatesUsingSection', 'sectionsOfActivity',
+    'listingActive', 'sectionListings', 'shownActivities',
     'STARTERS', 'SUGGESTED_ACTIVITIES', 'draftFromStarter', 'draftFromTemplate', 'blankDraft', 'moveStep',
     'weekStartOf', 'weekView', 'DEFAULT_NOTIFY', 'dueNotification',
   ]
