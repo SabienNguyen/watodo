@@ -22,6 +22,7 @@ Implement a system that allows you to commit to doing activities without a time-
 - Build routines that match your current lifestyle
 - Do the activities you want to do without burning out
 - Organize your life without constraining it to strict schedules
+- Strengthen bonds with the people in your life
 
 ## Hosting it yourself
 
