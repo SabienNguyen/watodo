@@ -9,13 +9,21 @@ test('nothing stored reads as the defaults', () => {
   expect(readSnapshot(store).notify).toEqual(DEFAULT_NOTIFY);
 });
 
+test('the bond kind round-trips through setNotifyKind', () => {
+  const store = createWatodoStore();
+  setNotifyKind(store, 'bond', false);
+  expect(readSnapshot(store).notify?.kinds.bond).toBe(false);
+  setNotifyKind(store, 'bond', true);
+  expect(readSnapshot(store).notify?.kinds.bond).toBe(true);
+});
+
 test('turning a kind on and off round-trips', () => {
   const store = createWatodoStore();
   setNotifyKind(store, 'slot', false);
   setNotifyKind(store, 'recap', false);
   setNotifyKind(store, 'checkIn', false);
   expect(readSnapshot(store).notify?.kinds).toEqual({
-    slot: false, committed: true, checkIn: false, rested: true, recap: false,
+    slot: false, committed: true, checkIn: false, rested: true, bond: true, recap: false,
   });
   setNotifyKind(store, 'slot', true);
   expect(readSnapshot(store).notify?.kinds.slot).toBe(true);

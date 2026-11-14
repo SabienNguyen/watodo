@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { fullDayView } from '@/domain'
+import { entryBonds, fullDayView } from '@/domain'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { useNowDate, useSnapshot } from '@/ui/hooks'
@@ -17,14 +17,20 @@ export function FullDay() {
       {view.items.filter(({ insideSpan }) => !insideSpan).flatMap(({ item, displayName, current, activities, logged }) => {
         // A slot with entries today is replaced by them, one step per entry.
         if (logged.length > 0) {
-          return logged.map(({ entry, activityName }) => (
-            <Step key={entry.id} current={current}>
-              <div className="flex items-center justify-between gap-2">
-                <p className="font-medium">{activityName}</p>
-                {entry.committed === true && <Badge variant="secondary">committed</Badge>}
-              </div>
-            </Step>
-          ))
+          return logged.map(({ entry, activityName }) => {
+            const withNames = entryBonds(snap, entry.id).map(bond => bond.name).join(', ')
+            return (
+              <Step key={entry.id} current={current}>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-medium">
+                    {activityName}
+                    {withNames !== '' && <span className="text-sm font-normal text-muted-foreground">{` · with ${withNames}`}</span>}
+                  </p>
+                  {entry.committed === true && <Badge variant="secondary">committed</Badge>}
+                </div>
+              </Step>
+            )
+          })
         }
         return [(
           <Step key={item.id} current={current}>

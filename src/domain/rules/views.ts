@@ -1,7 +1,7 @@
 import { addDays, dayKeyOf, daysBetween } from './dayRollover'
 import { guessTemplate, type TemplateGuess } from './guess'
 import {
-  entriesBySlot, itemsOf, positionAt, slotDisplayNames, slotsOf, spanOf, spentSlots, type Position,
+  entriesBySlot, itemsOf, positionAt, slotDisplayNames, slotOf, slotsOf, spanOf, spentSlots, type Position,
 } from './currentSlot'
 import { activityName, sectionName } from './names'
 import { lastDone } from './lastDone'
@@ -237,6 +237,35 @@ export function entrySlotName(snap: Snapshot, entry: JournalEntry): string {
     return names.get(item.id) ?? item.name
   }
   return sectionName(snap, entry.sectionId)
+}
+
+/**
+ * The slots a committed entry may run through, in order: its own slot, then each following slot of its day's
+ * template until the first one spent by another entry of that day. Empty for quick entries, entries whose slot
+ * cannot be found, and when the entry does not exist.
+ */
+export function throughChoices(snap: Snapshot, entryId: Id): { item: TemplateItem; displayName: string }[] {
+  const entry = snap.journal.find(candidate => candidate.id === entryId)
+  if (entry === undefined || entry.committed !== true) return []
+  const day = dayOfEntry(entry)
+  const named = snap.items.find(item => item.id === entry.itemId)
+  const templateId = named?.templateId ?? dayRecordFor(snap, day)?.templateId
+  if (templateId === undefined) return []
+
+  const items = itemsOf(snap, templateId)
+  const slots = slotsOf(items)
+  const own = slotOf(slots, entry)
+  if (own === undefined) return []
+  const others = snap.journal.filter(other => other.id !== entryId && dayOfEntry(other) === day)
+  const spent = spentSlots(items, others)
+  const names = slotDisplayNames(items)
+
+  const choices = [{ item: own, displayName: names.get(own.id) ?? own.name }]
+  for (const slot of slots.slice(slots.indexOf(own) + 1)) {
+    if (spent.has(slot.id)) break
+    choices.push({ item: slot, displayName: names.get(slot.id) ?? slot.name })
+  }
+  return choices
 }
 
 export function journalByDay(snap: Snapshot): JournalDay[] {

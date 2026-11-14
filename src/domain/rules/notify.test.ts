@@ -3,12 +3,12 @@ import { DEFAULT_NOTIFY, dueNotification, type NotifyKind, type NotifySettings, 
 import { dayKeyOf } from './dayRollover'
 import { at } from '../testing'
 import type {
-  Activity, DayRecord, JournalEntry, Label, Listing, Section, Snapshot, Template, TemplateItem,
+  Activity, Bond, DayRecord, JournalEntry, Label, Listing, Section, Snapshot, Template, TemplateItem,
 } from './types'
 
 // Today is Monday 12 Oct 2026. Work days are the three days before it, Mon 5 to Wed 7 Oct.
 const WORKDAYS = [-7, -6, -5]
-const KINDS: NotifyKind[] = ['slot', 'committed', 'checkIn', 'rested', 'recap']
+const KINDS: NotifyKind[] = ['slot', 'committed', 'checkIn', 'rested', 'bond', 'recap']
 
 const labels: Label[] = [
   { id: 'weekday', name: 'Weekdays', weekdays: [0, 1, 2, 3, 4], position: 0 },
@@ -61,7 +61,8 @@ function snapWith(parts: Partial<Snapshot> = {}): Snapshot {
     journal: WORKDAYS.flatMap(offset => workdayEntries(offset)),
     days: dayRecords(WORKDAYS),
     defaultTemplateId: 'work',
-    removed: { activities: [], sections: [], templates: [] },
+    bonds: [], company: [],
+    removed: { activities: [], sections: [], templates: [], bonds: [] },
     ...parts,
   }
 }
@@ -78,7 +79,7 @@ function sentAt(kind: NotifyKind, key: string, when: Date): SentNotification {
 describe('DEFAULT_NOTIFY', () => {
   test('has every kind on, 3 a day, and quiet from 23:00 to 08:00', () => {
     expect(DEFAULT_NOTIFY).toEqual({
-      kinds: { slot: true, committed: true, checkIn: true, rested: true, recap: true },
+      kinds: { slot: true, committed: true, checkIn: true, rested: true, bond: true, recap: true },
       dailyCap: 3,
       quietStart: 1380,
       quietEnd: 480,
@@ -199,7 +200,7 @@ describe('slot reminders', () => {
     // The work days were logged on a template that has since been deleted. It still has the weekday label.
     const oldWork: Template = { id: 'old-work', name: 'Old work', labelId: 'weekday', position: 5 }
     const snap = snapWith({
-      removed: { activities: [], sections: [], templates: [oldWork] },
+      removed: { activities: [], sections: [], templates: [oldWork], bonds: [] },
       days: dayRecords(WORKDAYS, 'old-work'),
       notify: onlyKinds('slot'),
     })
@@ -370,5 +371,102 @@ describe('no template today', () => {
   test('kinds 1-3 are never due', () => {
     const snap = snapWith({ templates: [], items: [], notify: onlyKinds('slot', 'checkIn', 'committed') })
     expect(dueNotification(snap, at(10, 0), [])).toBeNull()
+  })
+})
+
+describe('bond reminders', () => {
+  const alex: Bond = { id: 'alex', name: 'Alex', position: 0, catchUpDays: 5 }
+
+  /** The entry with Alex, `days` days before today, at 09:00. */
+  function alexEntry(days: number, id = 'e-alex'): JournalEntry {
+    return logged(id, 'walk', 'morning', at(9, 0, -days))
+  }
+
+  /** Only the bond kind on, with Alex's one walk `days` days back. */
+  function bondSnap(days: number, parts: Partial<Snapshot> = {}): Snapshot {
+    return snapWith({
+      journal: [alexEntry(days)],
+      days: [],
+      notify: onlyKinds('bond'),
+      bonds: [alex],
+      company: [{ entryId: 'e-alex', bondId: 'alex' }],
+      ...parts,
+    })
+  }
+
+  test('nothing before catchUpDays, and due on the day it is reached', () => {
+    expect(dueNotification(bondSnap(4), at(12, 0), [])).toBeNull()
+    expect(dueNotification(bondSnap(5), at(12, 0), [])).toEqual({
+      kind: 'bond',
+      key: 'bond:alex:e-alex',
+      title: "It's been 5 days since you saw Alex",
+      body: 'Last time: Walk',
+      url: '/?tab=bonds',
+    })
+  })
+
+  test('the gap reads in days up to 13, then in whole weeks from 14', () => {
+    const title = (days: number) => dueNotification(bondSnap(days), at(12, 0), [])?.title
+    expect(title(13)).toBe("It's been 13 days since you saw Alex")
+    expect(title(14)).toBe("It's been 2 weeks since you saw Alex")
+    expect(title(20)).toBe("It's been 2 weeks since you saw Alex")
+    expect(title(21)).toBe("It's been 3 weeks since you saw Alex")
+  })
+
+  test('once per gap: a sent key is skipped', () => {
+    const sent = [sentAt('bond', 'bond:alex:e-alex', at(12, 0, -1))]
+    expect(dueNotification(bondSnap(5), at(12, 0), sent)).toBeNull()
+  })
+
+  test('a new last seen entry is a new gap with a new key', () => {
+    const snap = bondSnap(5, {
+      journal: [alexEntry(10, 'e-old'), alexEntry(5, 'e-alex')],
+      company: [{ entryId: 'e-old', bondId: 'alex' }, { entryId: 'e-alex', bondId: 'alex' }],
+    })
+    const sent = [sentAt('bond', 'bond:alex:e-old', at(12, 0, -1))]
+    expect(dueNotification(snap, at(12, 0), sent)?.key).toBe('bond:alex:e-alex')
+  })
+
+  test('no catchUpDays, or never seen, gives nothing', () => {
+    expect(dueNotification(bondSnap(9, { bonds: [{ id: 'alex', name: 'Alex', position: 0 }] }), at(12, 0), [])).toBeNull()
+    expect(dueNotification(bondSnap(9, { journal: [], company: [] }), at(12, 0), [])).toBeNull()
+  })
+
+  test('a disabled kind gives nothing', () => {
+    // Recap is off too: today is a Monday, and the recap would otherwise be due.
+    const notify: NotifySettings = { ...DEFAULT_NOTIFY, kinds: { ...DEFAULT_NOTIFY.kinds, bond: false, recap: false } }
+    expect(dueNotification(bondSnap(5, { notify }), at(12, 0), [])).toBeNull()
+  })
+
+  test('not held back by a log within 20 minutes', () => {
+    const snap = bondSnap(5, {
+      journal: [alexEntry(5), logged('just-now', 'read', 'morning', at(11, 50))],
+    })
+    expect(dueNotification(snap, at(12, 0), [])?.kind).toBe('bond')
+  })
+
+  test('the first due bond in bondSummaries order wins: the higher rank', () => {
+    const sam: Bond = { id: 'sam', name: 'Sam', position: 1, catchUpDays: 5 }
+    const snap = bondSnap(5, {
+      bonds: [alex, sam],
+      journal: [alexEntry(5), logged('s1', 'walk', 'morning', at(9, 0, -9)), logged('s2', 'walk', 'morning', at(9, 0, -8)), logged('s3', 'walk', 'morning', at(9, 0, -7))],
+      company: [
+        { entryId: 'e-alex', bondId: 'alex' },
+        { entryId: 's1', bondId: 'sam' }, { entryId: 's2', bondId: 'sam' }, { entryId: 's3', bondId: 'sam' },
+      ],
+    })
+    expect(dueNotification(snap, at(12, 0), [])?.title).toBe("It's been 7 days since you saw Sam")
+  })
+
+  test('after rested, and before recap', () => {
+    const stretched = logged('stretch-1', 'stretch', 'evening', at(18, 0, -3))
+    const withRested = bondSnap(5, { notify: DEFAULT_NOTIFY, journal: [alexEntry(5), stretched] })
+    expect(dueNotification(withRested, at(12, 0), [])?.kind).toBe('rested')
+
+    const bondFirst = bondSnap(5, { notify: { ...DEFAULT_NOTIFY, kinds: { ...DEFAULT_NOTIFY.kinds, rested: false } }, journal: [alexEntry(5), stretched] })
+    expect(dueNotification(bondFirst, at(12, 0), [])?.kind).toBe('bond')
+
+    const recapFirstWhenNotDue = bondSnap(4, { notify: onlyKinds('bond', 'recap') })
+    expect(dueNotification(recapFirstWhenNotDue, at(12, 0), [])?.kind).toBe('recap')
   })
 })

@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'vitest'
-import { activityName, closeNames, nameKey, sectionName, templateName } from './names'
+import { activityName, bondName, closeNames, nameKey, sectionName, templateName } from './names'
 import type { Snapshot } from './types'
 
 function snap(parts: Partial<Snapshot> = {}): Snapshot {
   return {
     labels: [], templates: [], items: [], sections: [], activities: [],
     listings: [], journal: [], days: [], defaultTemplateId: null,
-    removed: { activities: [], sections: [], templates: [] },
+    bonds: [], company: [],
+    removed: { activities: [], sections: [], templates: [], bonds: [] },
     ...parts,
   }
 }
@@ -139,6 +140,7 @@ describe('activityName, sectionName and templateName', () => {
       activities: [{ id: 'run', name: 'Running', committed: true }],
       sections: [{ id: 'lunch', name: 'Lunch break', position: 1 }],
       templates: [{ id: 'old', name: 'Old day', labelId: 'work', position: 1 }],
+      bonds: [],
     },
   })
 
@@ -163,5 +165,22 @@ describe('activityName, sectionName and templateName', () => {
   test('a live row is not looked up among the deleted ones', () => {
     expect(activityName(live, 'gym')).toBe('Gym')
     expect(activityName(snap(), 'gym')).toBe('(removed)')
+  })
+})
+
+describe('bondName', () => {
+  const removed = snap({ removed: { activities: [], sections: [], templates: [], bonds: [{ id: 'old', name: 'Old friend', position: 1 }] } })
+  const live = snap({ bonds: [{ id: 'alex', name: 'Alex', position: 0 }], removed: removed.removed })
+
+  test('a live bond has its name', () => {
+    expect(bondName(live, 'alex')).toBe('Alex')
+  })
+
+  test('a deleted bond keeps its name', () => {
+    expect(bondName(live, 'old')).toBe('Old friend')
+  })
+
+  test('an unknown id reads as removed', () => {
+    expect(bondName(live, 'nobody')).toBe('(removed)')
   })
 })

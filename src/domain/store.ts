@@ -1,6 +1,6 @@
 import { createMergeableStore, type MergeableStore, type Row } from 'tinybase';
 import {
-  DEFAULT_NOTIFY, type DayRecord, type Id, type JournalEntry, type Label, type Listing, type NotifyKind,
+  DEFAULT_NOTIFY, type Bond, type Company, type DayRecord, type Id, type JournalEntry, type Label, type Listing, type NotifyKind,
   type NotifySettings, type Section, type Snapshot, type Template, type TemplateItem, type Activity,
 } from './rules';
 import { decodeWeekdays, NOTIFY_KIND_VALUE, roundedClamp, TABLE, VALUE } from './schema';
@@ -147,6 +147,23 @@ const readJournalEntry: RowReader<JournalEntry> = (id, row) => {
   };
 };
 
+/** A bond with no `catchUpDays` cell (or one below 1) is never caught up on. */
+const readBond: RowReader<Bond> = (id, row) => {
+  const name = text(row, 'name');
+  const position = num(row, 'position');
+  if (name === undefined || position === undefined) return undefined;
+  const catchUpDays = num(row, 'catchUpDays');
+  const caughtUp = catchUpDays !== undefined && Number.isFinite(catchUpDays) && catchUpDays >= 1;
+  return { id, name, position, ...(caughtUp ? { catchUpDays } : {}) };
+};
+
+const readCompany: RowReader<Company> = (_id, row) => {
+  const entryId = text(row, 'entryId');
+  const bondId = text(row, 'bondId');
+  if (entryId === undefined || bondId === undefined) return undefined;
+  return { entryId, bondId };
+};
+
 const readDayRecord: RowReader<DayRecord> = (day, row) => {
   const templateId = text(row, 'templateId');
   const note = text(row, 'note');
@@ -185,10 +202,13 @@ export function readSnapshot(store: WatodoStore): Snapshot {
     days: readRows(store, TABLE.days, readDayRecord).sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0)),
     defaultTemplateId: typeof defaultTemplateId === 'string' ? defaultTemplateId : null,
     notify: readNotify(store),
+    bonds: readRows(store, TABLE.bonds, readBond).sort(byPosition),
+    company: readRows(store, TABLE.company, readCompany),
     removed: {
       activities: readRows(store, TABLE.activities, readActivity, true),
       sections: readRows(store, TABLE.sections, readSection, true).sort(byPosition),
       templates: readRows(store, TABLE.templates, readTemplate, true).sort(byPosition),
+      bonds: readRows(store, TABLE.bonds, readBond, true).sort(byPosition),
     },
   };
 }

@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { lastDoneText } from '@/ui/format'
 import { AddField } from '@/ui/edit/fields'
+import { WithBonds } from '@/ui/bonds/WithBonds'
 import { useNowDate, useSnapshot, useWatodo } from '@/ui/hooks'
 import { UndoCommitDialog } from '@/ui/UndoCommitDialog'
 import { DayPicker } from './DayPicker'
@@ -42,6 +43,7 @@ export function NowScreen() {
   // null: picker closed. An object with no pending: switch mode.
   const [picker, setPicker] = useState<{ pending?: PendingLog } | null>(null)
   const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null)
+  const [withTarget, setWithTarget] = useState<NoteTarget | null>(null)
   const [spending, setSpending] = useState<SpendTarget | null>(null)
   const [undoing, setUndoing] = useState<UndoTarget | null>(null)
 
@@ -61,6 +63,10 @@ export function NowScreen() {
         onUndo={() => {
           deleteEntry(store, entryId)
           toast.dismiss(id)
+        }}
+        onWith={() => {
+          toast.dismiss(id)
+          setWithTarget({ entryId, activityName })
         }}
         onAddNote={() => {
           toast.dismiss(id)
@@ -232,6 +238,15 @@ export function NowScreen() {
         />
       )}
 
+      {withTarget !== null && (
+        <WithBonds
+          key={withTarget.entryId}
+          entryId={withTarget.entryId}
+          activityName={withTarget.activityName}
+          onClose={() => setWithTarget(null)}
+        />
+      )}
+
       {noteTarget !== null && (
         <AddNoteDialog
           key={noteTarget.entryId}
@@ -347,18 +362,20 @@ function defaultUntil(today: DayKey): DayKey {
   return addDays(weekStartOf(today), weekdayOf(today) === 6 ? 13 : 6)
 }
 
-/** After a quick log: Undo and Add note. After a committed log, the slot is spent: Add note only. */
-function AfterLogBar({ activityName, spentSlotName, onUndo, onAddNote }: {
+/** After a quick log: Undo, With…, and Add note. After a committed log, the slot is spent: With… and Add note. */
+function AfterLogBar({ activityName, spentSlotName, onUndo, onWith, onAddNote }: {
   activityName: string
   spentSlotName: string | null
   onUndo(): void
+  onWith(): void
   onAddNote(): void
 }): ReactNode {
   return (
     <div className="flex w-full items-center justify-between gap-2 rounded-xl bg-popover px-3 py-2 text-sm text-popover-foreground ring-1 ring-foreground/10">
-      <span>{spentSlotName === null ? `Logged ${activityName}` : `Spent ${spentSlotName} on ${activityName}`}</span>
+      <span className="min-w-0">{spentSlotName === null ? `Logged ${activityName}` : `Spent ${spentSlotName} on ${activityName}`}</span>
       <div className="flex shrink-0 gap-1">
         {spentSlotName === null && <Button size="sm" variant="ghost" onClick={onUndo}>Undo</Button>}
+        <Button size="sm" variant="ghost" onClick={onWith}>With…</Button>
         <Button size="sm" variant="outline" onClick={onAddNote}>Add note</Button>
       </div>
     </div>

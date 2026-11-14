@@ -1,6 +1,7 @@
 import type { Id } from '@/domain'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ThroughChoice } from '@/ui/ThroughChoice'
 
 /**
  * Asked before a committed activity is logged, since logging it spends the slot for the day. `choices` are the
@@ -24,29 +25,7 @@ export function SpendConfirm({ choices, throughId, activityName, onThroughChange
         <DialogHeader>
           <DialogTitle className="pr-6">{`Spend ${first}${through} on ${activityName}?`}</DialogTitle>
         </DialogHeader>
-        {choices.length > 1 && (
-          <div className="flex flex-col gap-2">
-            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Through</p>
-            <div role="group" aria-label="Through" className="flex flex-wrap gap-2">
-              {choices.map((choice, index) => {
-                const pressed = choice.id === throughId
-                // Every slot it will spend is filled in, from the current one through the chosen one.
-                const covered = index <= choices.findIndex(candidate => candidate.id === throughId)
-                return (
-                  <Button
-                    key={choice.id}
-                    size="sm"
-                    variant={covered ? 'default' : 'outline'}
-                    aria-pressed={pressed}
-                    onClick={() => onThroughChange(choice.id)}
-                  >
-                    {choice.name}
-                  </Button>
-                )
-              })}
-            </div>
-          </div>
-        )}
+        <ThroughChoice choices={choices} throughId={throughId} onThroughChange={onThroughChange} />
         <DialogFooter>
           <Button variant="ghost" onClick={onCancel}>Cancel</Button>
           <Button onClick={onConfirm}>Spend it</Button>

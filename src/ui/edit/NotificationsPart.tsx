@@ -16,6 +16,7 @@ const KINDS: { kind: NotifyKind; label: string }[] = [
   { kind: 'committed', label: 'After committed activities' },
   { kind: 'checkIn', label: 'Daily check-in' },
   { kind: 'rested', label: 'Resting activities back' },
+  { kind: 'bond', label: 'Catching up with bonds' },
   { kind: 'recap', label: 'Weekly recap' },
 ]
 

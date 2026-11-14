@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
-  dotStrip, entrySlotName, fullDayView, journalByDay, journalDay, listingActive, nowView, progress,
+  dotStrip, entrySlotName, fullDayView, journalByDay, journalDay, listingActive, nowView, progress, throughChoices,
   sectionActivities, sectionListings, sectionsOfActivity, shownActivities, templatesUsingSection,
 } from './views'
 import type { NowView } from './views'
@@ -77,7 +77,8 @@ function fixture(parts: Partial<Snapshot> = {}): Snapshot {
     journal: [],
     days: [],
     defaultTemplateId: 'basic',
-    removed: { activities: [], sections: [], templates: [] },
+    bonds: [], company: [],
+    removed: { activities: [], sections: [], templates: [], bonds: [] },
     ...parts,
   }
 }
@@ -502,7 +503,8 @@ describe('templatesUsingSection', () => {
     const snap: Snapshot = {
       labels: [], templates, items, sections: [], activities: [],
       listings: [], journal: [], days: [], defaultTemplateId: null,
-      removed: { activities: [], sections: [], templates: [] },
+      bonds: [], company: [],
+      removed: { activities: [], sections: [], templates: [], bonds: [] },
     }
     expect(templatesUsingSection(snap, 'x').map(template => template.id)).toEqual(['a', 'c'])
     expect(templatesUsingSection(snap, 'y').map(template => template.id)).toEqual(['b'])
@@ -748,7 +750,7 @@ describe('nowView: what is left in a slot', () => {
     const gymDone = { ...entry('gymDone', 'gym', 'postWork', at(2026, OCT, 12, 17, 45), 'postWork'), committed: true }
     const view = nowView(fixture({
       activities: activities.filter(activity => activity.id !== 'gym'),
-      removed: { activities: [gym], sections: [], templates: [] },
+      removed: { activities: [gym], sections: [], templates: [], bonds: [] },
       journal: [gymDone],
     }), at(2026, OCT, 12, 18, 0))
 
@@ -789,7 +791,7 @@ describe('fullDayView: logged', () => {
     const journal = [entry('g', 'gym', 'postWork', at(2026, OCT, 12, 17, 0), 'postWork')]
     const snap = fixture({
       activities: activities.filter(activity => activity.id !== 'gym'),
-      removed: { activities: [{ id: 'gym', name: 'Gym', committed: false }], sections: [], templates: [] },
+      removed: { activities: [{ id: 'gym', name: 'Gym', committed: false }], sections: [], templates: [], bonds: [] },
       journal,
     })
     const view = fullDayView(snap, at(2026, OCT, 12, 18, 0))
@@ -803,7 +805,7 @@ describe('deleted names in the Journal', () => {
     if (postWork === undefined) throw new Error('no postWork section')
     const snap = fixture({
       sections: sections.filter(section => section.id !== 'postWork'),
-      removed: { activities: [], sections: [postWork], templates: [] },
+      removed: { activities: [], sections: [postWork], templates: [], bonds: [] },
     })
     expect(entrySlotName(snap, entry('e1', 'gym', 'postWork', at(2026, OCT, 12, 18, 0)))).toBe('Post work')
   })
@@ -932,5 +934,72 @@ describe('progress with a span', () => {
     const view = progress(snap, '2026-10-12', '2026-10-12')
     expect(view.byActivity).toEqual([{ activityId: 'gym', count: 1 }])
     expect(view.bySection).toEqual([{ sectionId: 'postWork', count: 1 }])
+  })
+})
+
+describe('throughChoices', () => {
+  const committedAt = (id: string, activityId: string, sectionId: string, loggedAt: Date, itemId?: string): JournalEntry => (
+    { ...entry(id, activityId, sectionId, loggedAt, itemId), committed: true }
+  )
+
+  test('a committed entry offers its own slot and the following open slots', () => {
+    const snap = fixture({ journal: [committedAt('c1', 'gym', 'postWork', at(2026, OCT, 12, 17, 45), 'postWork')] })
+    expect(throughChoices(snap, 'c1').map(choice => [choice.item.id, choice.displayName])).toEqual([
+      ['postWork', 'Post work'],
+      ['postDinner', 'Post dinner'],
+      ['bedtime', 'Bedtime'],
+    ])
+  })
+
+  test('stops before a slot that another entry of the day spent', () => {
+    const snap = fixture({
+      journal: [
+        committedAt('c1', 'gym', 'postWork', at(2026, OCT, 12, 17, 45), 'postWork'),
+        committedAt('c2', 'read', 'bedtime', at(2026, OCT, 12, 16, 0), 'bedtime'),
+      ],
+    })
+    expect(throughChoices(snap, 'c1').map(choice => choice.item.id)).toEqual(['postWork', 'postDinner'])
+  })
+
+  test('a quick entry has no choices', () => {
+    const snap = fixture({ journal: [entry('q1', 'walk', 'postWork', at(2026, OCT, 12, 17, 45), 'postWork')] })
+    expect(throughChoices(snap, 'q1')).toEqual([])
+  })
+
+  test('an entry whose own span already covers later slots still offers them', () => {
+    const snap = fixture({
+      journal: [{ ...spanningEntry('c1', 'gym', 'postWork', at(2026, OCT, 12, 17, 45), 'postWork', 'postDinner') }],
+    })
+    expect(throughChoices(snap, 'c1').map(choice => choice.item.id)).toEqual(['postWork', 'postDinner', 'bedtime'])
+  })
+
+  test('a past day uses the template confirmed for that day, not the template of today', () => {
+    const snap = fixture({
+      days: [
+        { day: '2026-10-09', templateId: 'basic' },
+        { day: '2026-10-12', templateId: 'late' },
+      ],
+      journal: [{ ...entry('c1', 'gym', 'postWork', at(2026, OCT, 9, 18, 0)), committed: true }],
+    })
+    expect(throughChoices(snap, 'c1').map(choice => choice.item.id)).toEqual(['postWork', 'postDinner', 'bedtime'])
+  })
+
+  test('an entry without an itemId falls back to the first slot of its section in the day template', () => {
+    const snap = fixture({
+      days: [{ day: '2026-10-12', templateId: 'basic' }],
+      journal: [{ ...entry('c1', 'gym', 'postDinner', at(2026, OCT, 12, 19, 0)), committed: true }],
+    })
+    expect(throughChoices(snap, 'c1').map(choice => choice.item.id)).toEqual(['postDinner', 'bedtime'])
+  })
+
+  test('an entry without an itemId and no confirmed template for its day has no choices', () => {
+    const snap = fixture({
+      journal: [{ ...entry('c1', 'gym', 'postDinner', at(2026, OCT, 12, 19, 0)), committed: true }],
+    })
+    expect(throughChoices(snap, 'c1')).toEqual([])
+  })
+
+  test('an entry that does not exist has no choices', () => {
+    expect(throughChoices(fixture(), 'missing')).toEqual([])
   })
 })

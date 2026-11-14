@@ -39,7 +39,8 @@ function snapWith(items: TemplateItem[]): Snapshot {
   return {
     labels: [], templates: [], items, sections: [], activities: [],
     listings: [], journal: [], days: [], defaultTemplateId: null,
-    removed: { activities: [], sections: [], templates: [] },
+    bonds: [], company: [],
+    removed: { activities: [], sections: [], templates: [], bonds: [] },
   }
 }
 

@@ -11,6 +11,8 @@ export interface TemplateItem {
   position: number; sectionId?: Id; // sectionId only on slots. No start/end.
 }
 export interface Section { id: Id; name: string; position: number }
+export interface Bond { id: Id; name: string; position: number; catchUpDays?: number } // catchUpDays: whole days >= 1
+export interface Company { entryId: Id; bondId: Id }                                     // one row per entry and bond
 export interface Activity { id: Id; name: string; committed: boolean; restDays?: number; temporary?: boolean } // committed: logging it spends the slot. restDays: whole days >= 1; absent = never rests. temporary: created for a while; true only
 export interface Listing { sectionId: Id; activityId: Id; position: number; until?: DayKey } // until: last day it is in the slot; absent = for good
 export interface JournalEntry {
@@ -41,8 +43,10 @@ export interface TemplateDraft {
 export interface Snapshot {
   labels: Label[]; templates: Template[]; items: TemplateItem[]; // items sorted by position
   sections: Section[]; activities: Activity[]; listings: Listing[];
+  bonds: Bond[];                       // live, by position
+  company: Company[];
   journal: JournalEntry[]; days: DayRecord[]; defaultTemplateId: Id | null;
   // activities, sections and templates hold live rows only; removed holds deleted rows, kept for their names
-  removed: { activities: Activity[]; sections: Section[]; templates: Template[] };
+  removed: { activities: Activity[]; sections: Section[]; templates: Template[]; bonds: Bond[] };
   notify?: NotifySettings;             // absent = DEFAULT_NOTIFY
 }

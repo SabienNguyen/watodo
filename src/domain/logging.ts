@@ -1,7 +1,7 @@
-import { dayKeyOf, noonOf, nowView, type DayKey, type Id } from './rules';
+import { dayKeyOf, noonOf, nowView, throughChoices, type DayKey, type Id } from './rules';
 import type { Clock } from './clock';
 import { readSnapshot, type WatodoStore } from './store';
-import { TABLE, writeJournalRow } from './schema';
+import { deleteCompanyOfEntry, TABLE, writeJournalRow } from './schema';
 
 const ONE_MINUTE_MS = 60 * 1000;
 
@@ -99,8 +99,12 @@ export function undoLast(store: WatodoStore, clock: Clock): Id | null {
     if (latest === null || entry.loggedAt > latest.loggedAt) latest = { id: entry.id, loggedAt: entry.loggedAt };
   }
   if (latest === null) return null;
-  store.delRow(TABLE.journal, latest.id);
-  return latest.id;
+  const removed = latest.id;
+  store.transaction(() => {
+    deleteCompanyOfEntry(store, removed);
+    store.delRow(TABLE.journal, removed);
+  });
+  return removed;
 }
 
 /** Picks a slot by hand for today. Does nothing unless `itemId` is an existing slot. */
@@ -114,8 +118,12 @@ export function goToSlot(store: WatodoStore, clock: Clock, itemId: Id): void {
   });
 }
 
+/** Removes the entry and the bonds it had. */
 export function deleteEntry(store: WatodoStore, entryId: Id): void {
-  store.delRow(TABLE.journal, entryId);
+  store.transaction(() => {
+    deleteCompanyOfEntry(store, entryId);
+    store.delRow(TABLE.journal, entryId);
+  });
 }
 
 /**
@@ -139,6 +147,22 @@ export function addPastEntry(
     note: input.note,
     durationMinutes: input.durationMinutes,
   });
+}
+
+/**
+ * Sets how far a committed entry runs. Null, or its own slot (the first choice), makes it one slot again.
+ * Anything not in throughChoices is ignored, and so is a quick entry or one that does not exist.
+ */
+export function setEntryThrough(store: WatodoStore, entryId: Id, throughItemId: Id | null): void {
+  const choices = throughChoices(readSnapshot(store), entryId)
+  if (choices.length === 0) return
+  if (throughItemId === null || throughItemId === choices[0].item.id) {
+    if (store.hasCell(TABLE.journal, entryId, 'throughItemId')) store.delCell(TABLE.journal, entryId, 'throughItemId')
+    return
+  }
+  if (choices.some(choice => choice.item.id === throughItemId)) {
+    store.setCell(TABLE.journal, entryId, 'throughItemId', throughItemId)
+  }
 }
 
 /** An empty note removes it; a null duration removes it. */

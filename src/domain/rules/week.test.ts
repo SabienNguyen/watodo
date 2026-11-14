@@ -8,7 +8,8 @@ function snapWith(journal: JournalEntry[], activities: Activity[] = [], removed:
   return {
     labels: [], templates: [], items: [], sections: [], listings: [], days: [], defaultTemplateId: null,
     activities, journal,
-    removed: { activities: removed, sections: [], templates: [] },
+    bonds: [], company: [],
+    removed: { activities: removed, sections: [], templates: [], bonds: [] },
   }
 }
 

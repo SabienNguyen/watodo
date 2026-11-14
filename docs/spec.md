@@ -41,6 +41,7 @@ Some things, like dinner out in the city, take up more than one slot. A committe
 - The Journal names the span (`Post work – Post dinner`). In the full day the activity is one step that replaces the slots it covered and the fixed steps between them.
 - Undo (the slow, five-second one) reopens every slot it covered.
 - Only committed activities can cover several slots. The slots are always consecutive.
+- **Changing it later**: a committed entry's edit view in the Journal has the same `Through` row (its own slot, then the following slots up to the first one another entry that day spent), and saving changes the span. On today's entries the Now screen follows.
 
 ## Resting, and what is left in a slot
 
@@ -132,6 +133,17 @@ watodo runs on the computer and the iPhone and keeps both in step, with no cloud
 - **Demo mode** stays development-only and never syncs.
 
 Not in phase 2: Electron, a sync status indicator, sync between devices without the hub, user accounts.
+
+## Bonds
+
+Bonds are the people you do things with. Who you were with is a detail of an entry, so the menu keeps one `Dinner` instead of a `Dinner with …` for each person.
+
+- **Adding who**: the bar after a log has `With…`. It opens your bonds as buttons (most recently seen first) and a field for a new name; tapping a bond adds it to the entry or takes it off; `Done` closes it. A Journal entry's edit view has the same choice. Entries read `{activity} · with {names}` in the Journal, the full day and the weekly recap.
+- **Names** follow the activity rules: the same name (ignoring capitals, spacing, punctuation, a plural `s`) is the same bond; close names are suggested; a deleted bond keeps its name in history and comes back if added again.
+- **Ranks**: each bond has a rank from its number of entries (each entry counts 1). Rank n is reached at n(n+1)/2 entries: rank 1 at 1, 2 at 3, 3 at 6, 4 at 10, 5 at 15, 6 at 21, 7 at 28, 8 at 36, 9 at 45, 10 at 55, the highest. A bond with no entries has no rank.
+- **Unlock and rank up**: adding a name that is not a bond yet creates it and shows `New bond` with the name. Adding a bond to an entry that takes it to a new rank shows `Rank {n}` with the name. Taking it off again shows nothing.
+- **Bonds tab** (between Progress and Edit): your bonds, by rank then most recently seen, each with its rank and `last: …`, and a field to add one. A bond's page: its name (renamable), `Rank {n}` with progress to the next rank (`{x} of {y}`), `last: …`, what you do together (activities with counts, most first), recent times together (date and activity), `Catch up after` (a number of days; blank means never), and `Delete bond`.
+- **Notification**: a sixth kind, `Catching up with bonds`. For a bond with `Catch up after` set, once that many days have passed since the last entry with them: title `It's been {n} days since you saw {name}` (`{n} weeks` from 14 days, rounded down), text `Last time: {activity}`. Sent once per gap; tapping it opens the Bonds tab. It follows the cap and quiet hours, and is not held back after a log.
 
 ## Weekly recap
 

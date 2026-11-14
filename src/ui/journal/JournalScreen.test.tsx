@@ -2,8 +2,9 @@
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import {
-  addActivityToSection, addPastEntry, confirmDay, createWatodoStore, dayKeyOf, deleteActivity, deleteTemplate, draftFromStarter,
-  finishSetup, goToSlot, logActivity, readSnapshot, saveTemplate, setActivityCommitted, setUpStarter, type Clock,
+  addActivityToSection, addBond, addPastEntry, confirmDay, createWatodoStore, dayKeyOf, deleteActivity, deleteTemplate,
+  draftFromStarter, finishSetup, goToSlot, logActivity, readSnapshot, saveTemplate, setActivityCommitted, setEntryBond,
+  setEntryThrough, setUpStarter, type Clock,
   type Id, type WatodoStore,
 } from '@/domain'
 import { renderWithWatodo } from '@/ui/testing'
@@ -569,6 +570,82 @@ describe('committed entries', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(readSnapshot(store).journal.map(e => e.activityId)).not.toContain(activityId(store, 'Walk'))
   })
+  describe('editing a span', () => {
+    function gymEntryId(store: WatodoStore): Id {
+      const entry = readSnapshot(store).journal.find(candidate => candidate.activityId === activityId(store, 'Gym'));
+      if (entry === undefined) throw new Error('no gym entry');
+      return entry.id;
+    }
+
+    test('a committed entry shows the Through row with its own slot pressed, and the slots after it', () => {
+      renderWithWatodo(<JournalScreen />, { store: committedGymStore(), clock: MONDAY_1745 })
+
+      fireEvent.click(within(rowOf('Gym')).getByRole('button', { name: 'Edit' }))
+
+      const dialog = screen.getByRole('dialog')
+      expect(within(dialog).getByText('Through')).toBeInTheDocument()
+      expect(within(dialog).getByRole('button', { name: 'Post work' })).toHaveAttribute('aria-pressed', 'true')
+      expect(within(dialog).getByRole('button', { name: 'Post dinner' })).toHaveAttribute('aria-pressed', 'false')
+      expect(within(dialog).getByRole('button', { name: 'Bedtime' })).toHaveAttribute('aria-pressed', 'false')
+    })
+
+    test('widening to Post dinner and saving changes the row to Post work – Post dinner', () => {
+      const { store } = renderWithWatodo(<JournalScreen />, { store: committedGymStore(), clock: MONDAY_1745 })
+      expect(within(rowOf('Gym')).getByText('Post work')).toBeInTheDocument()
+
+      fireEvent.click(within(rowOf('Gym')).getByRole('button', { name: 'Edit' }))
+      const dialog = screen.getByRole('dialog')
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Post dinner' }))
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+      expect(screen.queryByRole('dialog')).toBeNull()
+      expect(within(rowOf('Gym')).getByText('Post work – Post dinner')).toBeInTheDocument()
+      expect(store.getCell('journal', gymEntryId(store), 'throughItemId')).toBe(itemId(store, 'Post dinner'))
+    })
+
+    test('narrowing from Post dinner to Post work and saving makes the entry one slot again', () => {
+      const store = committedGymStore()
+      setEntryThrough(store, gymEntryId(store), itemId(store, 'Post dinner'))
+      renderWithWatodo(<JournalScreen />, { store, clock: MONDAY_1745 })
+      expect(within(rowOf('Gym')).getByText('Post work – Post dinner')).toBeInTheDocument()
+
+      fireEvent.click(within(rowOf('Gym')).getByRole('button', { name: 'Edit' }))
+      const dialog = screen.getByRole('dialog')
+      expect(within(dialog).getByRole('button', { name: 'Post dinner' })).toHaveAttribute('aria-pressed', 'true')
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Post work' }))
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+      expect(within(rowOf('Gym')).getByText('Post work')).toBeInTheDocument()
+      expect(screen.queryByText('Post work – Post dinner')).toBeNull()
+      expect(store.hasCell('journal', gymEntryId(store), 'throughItemId')).toBe(false)
+    })
+
+    test('saving only a note leaves a stored span alone, even one the Through row cannot show', () => {
+      const store = committedGymStore()
+      // A through that is not among the choices: the dialog preselects the own slot for it.
+      store.setCell('journal', gymEntryId(store), 'throughItemId', 'not-a-slot')
+      renderWithWatodo(<JournalScreen />, { store, clock: MONDAY_1745 })
+
+      fireEvent.click(within(rowOf('Gym')).getByRole('button', { name: 'Edit' }))
+      const dialog = screen.getByRole('dialog')
+      fireEvent.change(within(dialog).getByLabelText('Note'), { target: { value: 'Leg day' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+      expect(store.getCell('journal', gymEntryId(store), 'throughItemId')).toBe('not-a-slot')
+      expect(store.getCell('journal', gymEntryId(store), 'note')).toBe('Leg day')
+    })
+
+    test('a quick entry has no Through row in its dialog', () => {
+      renderWithWatodo(<JournalScreen />, { store: committedGymStore(), clock: MONDAY_1745 })
+
+      fireEvent.click(within(rowOf('Walk')).getByRole('button', { name: 'Edit' }))
+
+      const dialog = screen.getByRole('dialog')
+      expect(within(dialog).queryByText('Through')).toBeNull()
+      expect(within(dialog).queryByRole('group', { name: 'Through' })).toBeNull()
+    })
+  })
+
 })
 
 describe('deleted names', () => {
@@ -615,5 +692,19 @@ describe('deleted names', () => {
     const offered = within(dialog).getAllByRole('option').map(option => option.textContent)
     expect(offered).toContain('Swim')
     expect(offered).not.toContain('Dance')
+  })
+
+  test('an entry row names the bonds on it, and With… opens the dialog for it', () => {
+    const store = seededStore()
+    const gym = readSnapshot(store).journal.find(entry => entry.activityId === activityId(store, 'Gym'))
+    if (gym === undefined) throw new Error('no Gym entry')
+    setEntryBond(store, gym.id, addBond(store, 'Alex').id, true)
+    setEntryBond(store, gym.id, addBond(store, 'Sam').id, true)
+    renderWithWatodo(<JournalScreen />, { store, clock: MONDAY_1745 })
+
+    expect(screen.getByText('· with Alex, Sam')).toBeInTheDocument()
+
+    fireEvent.click(within(rowOf('Gym')).getByRole('button', { name: 'With…' }))
+    expect(screen.getByRole('dialog', { name: 'Gym with…' })).toBeInTheDocument()
   })
 })

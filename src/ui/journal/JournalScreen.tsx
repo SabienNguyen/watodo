@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
 import {
-  activityName, addDays, addPastEntry, dayKeyOf, deleteEntry, editEntry, entrySlotName, journalDay, nowView,
-  sectionActivities, setDayNote, templateName, type DayKey, type Id, type JournalEntry,
+  activityName, addDays, addPastEntry, dayKeyOf, deleteEntry, editEntry, entryBonds, entrySlotName, journalDay, nowView,
+  sectionActivities, setDayNote, setEntryThrough, templateName, throughChoices, type DayKey, type Id, type JournalEntry,
 } from '@/domain'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -10,9 +10,11 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { WithBonds } from '@/ui/bonds/WithBonds'
 import { NativeSelect } from '@/ui/NativeSelect'
 import { dayLabel } from '@/ui/format'
 import { useNowDate, useSnapshot, useWatodo } from '@/ui/hooks'
+import { ThroughChoice } from '@/ui/ThroughChoice'
 import { UndoCommitDialog } from '@/ui/UndoCommitDialog'
 import { FullDay } from './FullDay'
 
@@ -122,8 +124,11 @@ function EntryRow({ entry, onEdit }: { entry: JournalEntry; onEdit(): void }) {
   const snap = useSnapshot()
   // Whether the Undo dialog is open for this committed entry.
   const [undoing, setUndoing] = useState(false)
+  // Whether the With… dialog is open for this entry.
+  const [withOpen, setWithOpen] = useState(false)
   const entryActivity = activityName(snap, entry.activityId)
   const slotName = entrySlotName(snap, entry)
+  const withNames = entryBonds(snap, entry.id).map(bond => bond.name).join(', ')
   const committed = entry.committed === true
 
   // A quick entry is deleted at once. A committed one is only deleted through the slow Undo.
@@ -138,10 +143,12 @@ function EntryRow({ entry, onEdit }: { entry: JournalEntry; onEdit(): void }) {
         <p className="flex flex-wrap items-baseline gap-x-2 font-medium">
           <span>{entryActivity}</span>
           <span className="text-sm font-normal text-muted-foreground">{slotName}</span>
+          {withNames !== '' && <span className="text-sm font-normal text-muted-foreground">{`· with ${withNames}`}</span>}
           {committed && <Badge variant="secondary">committed</Badge>}
         </p>
         <div className="flex shrink-0 gap-1">
           <Button variant="ghost" size="sm" onClick={onEdit}>Edit</Button>
+          <Button variant="ghost" size="sm" onClick={() => setWithOpen(true)}>With…</Button>
           <Button variant="ghost" size="sm" onClick={remove}>Delete</Button>
         </div>
       </div>
@@ -157,6 +164,9 @@ function EntryRow({ entry, onEdit }: { entry: JournalEntry; onEdit(): void }) {
           onCancel={() => setUndoing(false)}
         />
       )}
+      {withOpen && (
+        <WithBonds entryId={entry.id} activityName={entryActivity} onClose={() => setWithOpen(false)} />
+      )}
     </li>
   )
 }
@@ -169,11 +179,20 @@ function parseMinutes(text: string): number | null {
 
 function EditEntryDialog({ entry, onClose }: { entry: JournalEntry; onClose(): void }) {
   const { store } = useWatodo()
+  const snap = useSnapshot()
+  const choices = throughChoices(snap, entry.id).map(choice => ({ id: choice.item.id, name: choice.displayName }))
   const [note, setNote] = useState(entry.note ?? '')
   const [minutes, setMinutes] = useState(entry.durationMinutes === undefined ? '' : String(entry.durationMinutes))
+  // The entry's current through when it is still a choice, else its own slot.
+  const [throughId, setThroughId] = useState<Id>(
+    () => choices.find(choice => choice.id === entry.throughItemId)?.id ?? choices[0]?.id ?? '',
+  )
+  // The span changes only when a Through button was pressed, so saving a note never reshapes it.
+  const [throughTouched, setThroughTouched] = useState(false)
 
   const save = () => {
     editEntry(store, entry.id, { note: note.trim(), durationMinutes: parseMinutes(minutes) })
+    if (throughTouched) setEntryThrough(store, entry.id, throughId)
     onClose()
   }
 
@@ -183,6 +202,14 @@ function EditEntryDialog({ entry, onClose }: { entry: JournalEntry; onClose(): v
         <DialogHeader>
           <DialogTitle>Edit entry</DialogTitle>
         </DialogHeader>
+        <ThroughChoice
+          choices={choices}
+          throughId={throughId}
+          onThroughChange={id => {
+            setThroughId(id)
+            setThroughTouched(true)
+          }}
+        />
         <div className="flex flex-col gap-2">
           <Label htmlFor="edit-entry-note">Note</Label>
           <Textarea id="edit-entry-note" value={note} onChange={e => setNote(e.target.value)} />

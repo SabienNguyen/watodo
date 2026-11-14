@@ -2,7 +2,7 @@
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import {
-  createWatodoStore, finishSetup, readSnapshot, setUpStarter, type Clock, type Id, type WatodoStore,
+  addBond, createWatodoStore, finishSetup, readSnapshot, setEntryBond, setUpStarter, type Clock, type Id, type WatodoStore,
 } from '@/domain'
 import { renderWithWatodo } from '@/ui/testing'
 import { WeekRecap } from './WeekRecap'
@@ -291,5 +291,18 @@ describe('WeekRecap', () => {
 
     advance(500)
     expect(scrollIntoView).toHaveBeenCalledTimes(2)
+  })
+
+  test('a recap row names the bonds on its entry', () => {
+    const store = finishedStore()
+    logAt(store, 'Gym', new Date(2026, 9, 5, 9, 0), 'Post work')
+    const gym = readSnapshot(store).journal[0]
+    setEntryBond(store, gym.id, addBond(store, 'Alex').id, true)
+    setEntryBond(store, gym.id, addBond(store, 'Sam').id, true)
+    renderWithWatodo(<WeekRecap />, { store, clock: MONDAY_1745 })
+    goPrevious()
+    watch()
+
+    expect(screen.getByText('· with Alex, Sam')).toBeInTheDocument()
   })
 })

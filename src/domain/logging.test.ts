@@ -1,11 +1,13 @@
 import { expect, test } from 'vitest';
 import {
-  addPastEntry, confirmDay, deleteEntry, editEntry, goToSlot, logActivity, setDayNote, undoLast,
+  addPastEntry, confirmDay, deleteEntry, editEntry, goToSlot, logActivity, setDayNote, setEntryThrough, undoLast,
   type LogResult, type PendingLog,
 } from './logging';
+import { addBond, setEntryBond } from './bonds';
 import { setActivityCommitted } from './menu';
 import { journalByDay, nowView, noonOf, type Id } from './rules';
-import { readSnapshot } from './store';
+import { readSnapshot, type WatodoStore } from './store';
+import { draftFromStarter } from './rules';
 import { saveTemplate } from './templates';
 import { at, basicDay } from './testing';
 
@@ -501,5 +503,124 @@ describe('spans', () => {
     expect(undoLast(store, clock)).not.toBeNull();
 
     expect(nowView(readSnapshot(store), at(17, 46)).slots.map(slot => slot.spentBy)).toEqual([null, null, null]);
+  });
+});
+
+test('undo also removes the bonds of the entry it deletes', () => {
+  const { store, templateId, activityId, sectionId, itemId } = basicDay();
+  let now = at(17, 45);
+  const clock = () => now;
+  confirmDay(store, clock, templateId, {
+    activityId: activityId('Gym'), sectionId: sectionId('Post work'), itemId: itemId('Post work'),
+  });
+  const gymId = readSnapshot(store).journal[0].id;
+  const alex = addBond(store, 'Alex').id;
+  setEntryBond(store, gymId, alex, true);
+
+  now = at(18, 0);
+  expect(undoLast(store, clock)).toBe(gymId);
+  expect(readSnapshot(store).company).toEqual([]);
+  expect(readSnapshot(store).bonds.map(bond => bond.id)).toEqual([alex]);
+});
+
+describe('setEntryThrough', () => {
+  /** The Office day starter saved and confirmed: Post work, Post dinner and Post-shower are its slots. */
+  function officeDay() {
+    const fixture = basicDay();
+    const draft = draftFromStarter(readSnapshot(fixture.store), 'office');
+    if (draft === null) throw new Error('no office starter');
+    const templateId = saveTemplate(fixture.store, draft);
+    const itemIn = (name: string): Id => {
+      const item = readSnapshot(fixture.store).items.find(candidate => candidate.templateId === templateId && candidate.name === name);
+      if (item === undefined) throw new Error(`no item ${name}`);
+      return item.id;
+    };
+    return { ...fixture, templateId, itemIn };
+  }
+
+  /** Gym is committed and logged in Post work at 17:45, running through Post dinner. */
+  function gymThroughPostDinner() {
+    const fixture = officeDay();
+    setActivityCommitted(fixture.store, fixture.activityId('Gym'), true);
+    const clock = () => at(17, 45);
+    confirmDay(fixture.store, clock, fixture.templateId);
+    const throughItemId = fixture.itemIn('Post dinner');
+    const entryId = loggedIdOf(logActivity(fixture.store, clock, fixture.activityId('Gym'), { throughItemId }));
+    return { ...fixture, entryId };
+  }
+
+  function gymEntry(store: WatodoStore, entryId: Id) {
+    const entry = readSnapshot(store).journal.find(candidate => candidate.id === entryId);
+    if (entry === undefined) throw new Error('no gym entry');
+    return entry;
+  }
+
+  test('widens Post work to Post dinner through Post-shower, and the Now screen moves past them', () => {
+    const { store, entryId, itemIn } = gymThroughPostDinner();
+
+    setEntryThrough(store, entryId, itemIn('Post-shower'));
+
+    expect(gymEntry(store, entryId).throughItemId).toBe(itemIn('Post-shower'));
+    const view = nowView(readSnapshot(store), at(17, 46));
+    expect(view.slots.map(slot => slot.spentBy !== null)).toEqual([true, true, true, false]);
+    expect(view.positionName).toBe('Pre-sleep');
+  });
+
+  test('narrowing back to Post dinner reopens Post-shower, and the Now screen follows', () => {
+    const { store, entryId, itemIn } = gymThroughPostDinner();
+    setEntryThrough(store, entryId, itemIn('Post-shower'));
+
+    setEntryThrough(store, entryId, itemIn('Post dinner'));
+
+    expect(gymEntry(store, entryId).throughItemId).toBe(itemIn('Post dinner'));
+    const view = nowView(readSnapshot(store), at(17, 46));
+    expect(view.slots.find(slot => slot.item.name === 'Post-shower')?.spentBy).toBeNull();
+    expect(view.positionName).toBe('Post-shower');
+  });
+
+  test('null clears the through item, so the entry is one slot again', () => {
+    const { store, entryId } = gymThroughPostDinner();
+
+    setEntryThrough(store, entryId, null);
+
+    expect(store.hasCell('journal', entryId, 'throughItemId')).toBe(false);
+    expect(nowView(readSnapshot(store), at(17, 46)).positionName).toBe('Post dinner');
+  });
+
+  test('choosing the entry own slot clears the through item too', () => {
+    const { store, entryId, itemIn } = gymThroughPostDinner();
+
+    setEntryThrough(store, entryId, itemIn('Post work'));
+
+    expect(store.hasCell('journal', entryId, 'throughItemId')).toBe(false);
+  });
+
+  test('an id that is not a choice is ignored: a slot another entry spent, a fixed step, an unknown id', () => {
+    const { store, entryId, itemIn, activityId } = gymThroughPostDinner();
+    const late = () => at(21, 0);
+    setActivityCommitted(store, activityId('Stretch'), true);
+    goToSlot(store, late, itemIn('Post-shower'));
+    loggedIdOf(logActivity(store, late, activityId('Stretch')));
+    const before = gymEntry(store, entryId).throughItemId;
+
+    setEntryThrough(store, entryId, itemIn('Post-shower'));
+    expect(gymEntry(store, entryId).throughItemId).toBe(before);
+    setEntryThrough(store, entryId, itemIn('Dinner'));
+    expect(gymEntry(store, entryId).throughItemId).toBe(before);
+    setEntryThrough(store, entryId, 'no-such-item');
+    expect(gymEntry(store, entryId).throughItemId).toBe(before);
+  });
+
+  test('a quick entry and an entry that does not exist are left alone', () => {
+    const { store, templateId, activityId, itemId } = basicDay();
+    const clock = () => at(17, 45);
+    confirmDay(store, clock, templateId);
+    const walkId = loggedIdOf(logActivity(store, clock, activityId('Walk')));
+
+    setEntryThrough(store, walkId, itemId('Post dinner'));
+    setEntryThrough(store, 'no-such-entry', itemId('Post dinner'));
+
+    expect(readSnapshot(store).journal).toEqual([expect.objectContaining({ id: walkId })]);
+    expect(readSnapshot(store).journal[0]).not.toHaveProperty('throughItemId');
   });
 });

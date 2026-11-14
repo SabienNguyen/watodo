@@ -1,7 +1,7 @@
-import { nameKey, type DayKey, type Id } from './rules';
+import { type DayKey, type Id } from './rules';
 import type { WatodoStore } from './store';
 import {
-  ensureActivity, ensureSection, ensureTemporaryListing, findByKey, isLive, keepInSection, liveRowIds, listingId, TABLE,
+  ensureActivity, ensureSection, ensureTemporaryListing, findByKey, isLive, keepInSection, listingId, renameRow, TABLE,
 } from './schema';
 
 /** The live section with this name's key, else a deleted one brought back (with no listings), else a new one last. */
@@ -128,16 +128,3 @@ export function setActivityRestDays(store: WatodoStore, activityId: Id, days: nu
   else store.delCell(TABLE.activities, activityId, 'restDays');
 }
 
-/** Renames a live row, unless another live row of the table has the same name key. */
-function renameRow(store: WatodoStore, tableId: string, id: Id, name: string): boolean {
-  if (!isLive(store, tableId, id)) return false;
-  const key = nameKey(name);
-  const clash = liveRowIds(store, tableId).some(other => {
-    if (other === id) return false;
-    const existing = store.getCell(tableId, other, 'name');
-    return typeof existing === 'string' && nameKey(existing) === key;
-  });
-  if (clash) return false;
-  store.setCell(tableId, id, 'name', name.trim());
-  return true;
-}

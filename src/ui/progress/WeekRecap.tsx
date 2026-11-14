@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
-import { addDays, dayKeyOf, weekStartOf, weekView, type DayKey } from '@/domain'
+import { addDays, dayKeyOf, entryBonds, weekStartOf, weekView, type DayKey } from '@/domain'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { shortDayLabel, weekRangeLabel } from '@/ui/format'
@@ -90,6 +90,7 @@ export function WeekRecap() {
                   key={entry.id}
                   name={activityName}
                   committed={entry.committed === true}
+                  withNames={entryBonds(snap, entry.id).map(bond => bond.name).join(', ')}
                   dayLabel={startsDay ? shortDayLabel(day) : null}
                 />
               )
@@ -107,7 +108,13 @@ export function WeekRecap() {
 }
 
 /** One entry of the recap. It fades in and scrolls into view when it appears. */
-function RecapRow({ name, committed, dayLabel }: { name: string; committed: boolean; dayLabel: string | null }) {
+function RecapRow({ name, committed, withNames, dayLabel }: {
+  name: string
+  committed: boolean
+  /** The bonds on the entry, joined with ', '. Empty for none. */
+  withNames: string
+  dayLabel: string | null
+}) {
   const ref = useRef<HTMLLIElement>(null)
 
   useEffect(() => {
@@ -123,6 +130,7 @@ function RecapRow({ name, committed, dayLabel }: { name: string; committed: bool
       <div className="flex items-center gap-2">
         <CheckIcon className="size-4 shrink-0 text-primary" />
         <span className="font-medium">{name}</span>
+        {withNames !== '' && <span className="text-sm text-muted-foreground">{`· with ${withNames}`}</span>}
         {committed && <Badge variant="secondary">committed</Badge>}
       </div>
     </li>

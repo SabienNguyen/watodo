@@ -11,6 +11,8 @@ export const TABLE = {
   listings: 'listings', // row id: `${sectionId}:${activityId}`, so a listing cannot be duplicated across devices
   journal: 'journal',
   days: 'days', // row id: the DayKey
+  bonds: 'bonds',
+  company: 'company', // row id: `${entryId}:${bondId}`, so a bond cannot be on an entry twice across devices
 } as const;
 
 export const VALUE = {
@@ -21,6 +23,7 @@ export const VALUE = {
   notifyCheckIn: 'notifyCheckIn',
   notifyRested: 'notifyRested',
   notifyRecap: 'notifyRecap',
+  notifyBond: 'notifyBond',
   notifyDailyCap: 'notifyDailyCap',
   quietStart: 'quietStart',
   quietEnd: 'quietEnd',
@@ -38,6 +41,7 @@ export const NOTIFY_KIND_VALUE: Record<NotifyKind, string> = {
   checkIn: VALUE.notifyCheckIn,
   rested: VALUE.notifyRested,
   recap: VALUE.notifyRecap,
+  bond: VALUE.notifyBond,
 };
 
 export function newId(): Id {
@@ -70,6 +74,24 @@ export function sameName(a: string, b: string): boolean {
 
 export function listingId(sectionId: Id, activityId: Id): Id {
   return `${sectionId}:${activityId}`;
+}
+
+export function companyId(entryId: Id, bondId: Id): Id {
+  return `${entryId}:${bondId}`;
+}
+
+/** Renames a live row, unless another live row of the table has the same name key. */
+export function renameRow(store: MergeableStore, tableId: string, id: Id, name: string): boolean {
+  if (!isLive(store, tableId, id)) return false;
+  const key = nameKey(name);
+  const clash = liveRowIds(store, tableId).some(other => {
+    if (other === id) return false;
+    const existing = store.getCell(tableId, other, 'name');
+    return typeof existing === 'string' && nameKey(existing) === key;
+  });
+  if (clash) return false;
+  store.setCell(tableId, id, 'name', name.trim());
+  return true;
 }
 
 export function findIdByName(store: MergeableStore, tableId: string, name: string): Id | undefined {
@@ -217,4 +239,11 @@ export function writeJournalRow(store: MergeableStore, fields: JournalFields): I
   if (fields.durationMinutes !== undefined) row.durationMinutes = fields.durationMinutes;
   store.setRow(TABLE.journal, id, row);
   return id;
+}
+
+/** Removes the bond links of a journal entry. Called with the entry's own deletion. */
+export function deleteCompanyOfEntry(store: MergeableStore, entryId: Id): void {
+  for (const rowId of store.getRowIds(TABLE.company)) {
+    if (store.getCell(TABLE.company, rowId, 'entryId') === entryId) store.delRow(TABLE.company, rowId);
+  }
 }

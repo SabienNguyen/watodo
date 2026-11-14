@@ -2,8 +2,8 @@
 import { screen, within } from '@testing-library/react'
 import { describe, expect, test } from 'vitest'
 import {
-  confirmDay, createWatodoStore, draftFromStarter, finishSetup, goToSlot, logActivity, readSnapshot, saveTemplate,
-  setActivityCommitted, setUpStarter, type Clock, type Id, type WatodoStore,
+  addBond, confirmDay, createWatodoStore, draftFromStarter, finishSetup, goToSlot, logActivity, readSnapshot, saveTemplate,
+  setActivityCommitted, setEntryBond, setUpStarter, type Clock, type Id, type WatodoStore,
 } from '@/domain'
 import { renderWithWatodo } from '@/ui/testing'
 import { FullDay } from './FullDay'
@@ -201,5 +201,16 @@ describe('FullDay', () => {
     const { container } = renderWithWatodo(<FullDay />, { store: createWatodoStore() })
 
     expect(container).toBeEmptyDOMElement()
+  })
+
+  test('a logged step names the bonds on its entry', () => {
+    const store = postWorkLoggedStore()
+    const gym = readSnapshot(store).journal.find(entry => entry.activityId === activityId(store, 'Gym'))
+    if (gym === undefined) throw new Error('no Gym entry')
+    setEntryBond(store, gym.id, addBond(store, 'Alex').id, true)
+    setEntryBond(store, gym.id, addBond(store, 'Sam').id, true)
+    renderWithWatodo(<FullDay />, { store, clock: MONDAY_1745 })
+
+    expect(screen.getByText('· with Alex, Sam')).toBeInTheDocument()
   })
 })

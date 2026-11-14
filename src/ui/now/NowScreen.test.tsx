@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { toast } from 'sonner'
 import { Toaster } from '@/components/ui/sonner'
 import {
-  confirmDay, createWatodoStore, draftFromStarter, draftFromTemplate, finishSetup, logActivity, readSnapshot,
+  addBond, confirmDay, createWatodoStore, draftFromStarter, draftFromTemplate, finishSetup, logActivity, readSnapshot,
   removeActivityFromSection, saveTemplate, setActivityCommitted, setActivityRestDays, setUpStarter, type Clock,
   type Id, type WatodoStore,
 } from '@/domain'
@@ -769,5 +769,19 @@ describe('temporary activities from the add field', () => {
     expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled()
     fireEvent.change(screen.getByLabelText('Until'), { target: { value: '2026-10-14' } })
     expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled()
+  })
+
+  test('With… on the after-log bar opens the dialog for that entry', async () => {
+    const { store } = renderNow({ clock: MONDAY_1745 })
+    const alex = addBond(store, 'Alex').id
+
+    fireEvent.click(activityButton('Gym'))
+    confirmBasicDay()
+    fireEvent.click(await screen.findByRole('button', { name: 'With…' }))
+
+    const dialog = screen.getByRole('dialog', { name: 'Gym with…' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Alex' }))
+    const gym = readSnapshot(store).journal.find(entry => entry.activityId === activityId(store, 'Gym'))
+    expect(readSnapshot(store).company).toEqual([{ entryId: gym?.id, bondId: alex }])
   })
 })

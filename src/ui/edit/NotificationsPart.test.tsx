@@ -43,6 +43,26 @@ async function device(name: string): Promise<HTMLElement> {
 }
 
 describe('the Notifications tab', () => {
+  test('has a sixth checkbox, Catching up with bonds, after Resting activities back and before Weekly recap', () => {
+    renderTab()
+
+    const labels = screen.getAllByRole('checkbox').map(box => box.closest('label')?.textContent)
+    expect(labels).toEqual([
+      'Slot reminders', 'After committed activities', 'Daily check-in', 'Resting activities back', 'Catching up with bonds', 'Weekly recap',
+    ])
+  })
+
+  test('toggling Catching up with bonds stores the bond kind', () => {
+    const store = finishedStore()
+    renderTab(store)
+
+    const box = screen.getByRole('checkbox', { name: 'Catching up with bonds' })
+    expect(box).toBeChecked()
+    fireEvent.click(box)
+
+    expect(box).not.toBeChecked()
+    expect(readSnapshot(store).notify?.kinds.bond).toBe(false)
+  })
   test('is the fifth Edit tab and shows the five kinds', async () => {
     renderWithWatodo(<EditScreen />, { store: finishedStore() })
 
@@ -55,7 +75,7 @@ describe('the Notifications tab', () => {
   test('shows each kind as a checkbox, all on by default', () => {
     renderTab()
 
-    for (const name of ['Slot reminders', 'After committed activities', 'Daily check-in', 'Resting activities back', 'Weekly recap']) {
+    for (const name of ['Slot reminders', 'After committed activities', 'Daily check-in', 'Resting activities back', 'Catching up with bonds', 'Weekly recap']) {
       expect(screen.getByRole('checkbox', { name })).toBeChecked()
     }
   })

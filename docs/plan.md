@@ -1026,3 +1026,99 @@ export function logActivity(store, clock, activityId, options?: { throughItemId?
 
 ### Task 39: spans in the rules and domain
 ### Task 40: spans on screen
+
+---
+
+# Change 17: bonds
+
+See "Bonds" in `docs/spec.md`.
+
+## Contracts
+
+### `src/domain/rules/types.ts`
+```ts
+export interface Bond { id: Id; name: string; position: number; catchUpDays?: number } // catchUpDays: whole days >= 1
+export interface Company { entryId: Id; bondId: Id }                                     // one row per entry and bond
+export interface Snapshot {
+  // ...existing
+  bonds: Bond[];                       // live, by position
+  company: Company[];
+  removed: { activities; sections; templates; bonds: Bond[] };
+}
+```
+Every Snapshot literal in tests gains `bonds: []`, `company: []`, `removed.bonds: []`.
+
+### `src/domain/rules/bonds.ts` (new, re-exported)
+```ts
+export const MAX_RANK = 10;
+export function rankOf(count: number): number;                 // largest n <= 10 with n(n+1)/2 <= count; 0 for 0
+export function rankThreshold(rank: number): number;           // n(n+1)/2
+export function bondName(snap: Snapshot, id: Id): string;      // live or removed, else '(removed)' (add to names.ts or here)
+export function entryBonds(snap: Snapshot, entryId: Id): Bond[]; // live or removed bonds of the entry, by bond position
+export interface BondSummary {
+  bond: Bond; count: number; rank: number;
+  next: { have: number; need: number } | null;   // entries since this rank's threshold / entries from this rank to the next; null at MAX_RANK
+  lastSeen: JournalEntry | null;                  // their latest entry
+}
+export function bondSummaries(snap: Snapshot): BondSummary[];   // live bonds, by rank desc, then lastSeen newest first, then name
+export interface BondPage extends BondSummary {
+  together: { activityName: string; count: number }[];          // by count desc, then name
+  recent: { entry: JournalEntry; day: DayKey; activityName: string }[]; // newest first, at most 10
+}
+export function bondPage(snap: Snapshot, bondId: Id): BondPage | null;
+export function recentBonds(snap: Snapshot): Bond[];            // live bonds, most recently seen first, never-seen last by position
+```
+Counts use journal entries that exist (company rows pointing at deleted entries are ignored).
+
+### `src/domain/rules/notify.ts` (changes)
+- `NotifyKind` gains `'bond'`; `DEFAULT_NOTIFY.kinds.bond = true`.
+- Candidate between `rested` and `recap`, not held back after a log: for each live bond with `catchUpDays` and a `lastSeen`, when `daysBetween(dayOf(lastSeen), today) >= catchUpDays`: key `bond:{bondId}:{lastSeen.id}`, title `It's been {n} days since you saw {name}` (from 14 days: `{floor(days/7)} weeks`), body `Last time: {activityName}`, url `/?tab=bonds`. First due bond in `bondSummaries` order wins.
+
+### Domain: `src/domain/bonds.ts` (new, re-exported) and storage
+Tables `bonds` (name, position, catchUpDays?, deleted?) and `company` (row id `${entryId}:${bondId}`, cells entryId, bondId). Value `notifyBond`.
+```ts
+export function addBond(store, name: string): { id: Id; created: boolean }; // by nameKey: live reused (created false); deleted brought back (created true); else new (created true). Blank -> { id: '', created: false }
+export function renameBond(store, id, name): boolean;                       // refused on a live key clash, like activities
+export function deleteBond(store, id): void;                                 // marks deleted; company rows kept
+export function setBondCatchUp(store, id, days: number): void;               // floor >= 1 stored, else removed
+export function setEntryBond(store, entryId: Id, bondId: Id, together: boolean): void; // adds/removes the company row; only for existing entries and live bonds
+```
+`deleteEntry` also removes the entry's company rows. `readSnapshot` fills `bonds`, `company`, `removed.bonds`; `notify.kinds.bond` from `notifyBond`.
+
+### UI
+- `src/ui/bonds/WithBonds.tsx`: the `With…` dialog for one entry: `recentBonds` as toggle buttons (`aria-pressed`), an `AddField`-style field (`New bond`, `existing` = live bonds) that adds the bond and puts it on the entry, `Done`. After each change it compares the bond's rank before and after: a new bond shows a `New bond` toast with the name; a higher rank shows a `Rank {n}` toast with the name. Toasts are short custom cards (small uppercase label, the name large).
+- After-log bar: `With…` between Undo and Add note (also after a committed log). Journal entry edit: the same dialog from a `With…` button. Journal rows, FullDay logged steps and WeekRecap rows append ` · with {names}`.
+- `src/ui/bonds/BondsScreen.tsx`: the tab between Progress and Edit (`?tab=bonds` works): list (`bondSummaries`: name, `Rank {n}` or nothing, `last: …` via `lastDoneText`), `AddField` (`Bond name`, `Add bond`, existing), empty `No bonds yet.`; tapping opens the bond page (back control like Edit's views): `EditableText` name with `existing`, `Rank {n}` and a progress bar with `{have} of {need}`, `last: …`, together list, recent list (`dayLabel` and activity), `Catch up after` number field (days, blank = none), `Delete bond` with a confirm dialog.
+- Notifications tab: sixth checkbox `Catching up with bonds`.
+
+## Tasks
+### Task 41: bonds in the rules
+### Task 42: bonds in the domain
+### Task 43: With… and bond names on entries
+### Task 44: the Bonds tab
+
+---
+
+# Change 18: change a span in the Journal
+
+See "Changing it later" under "One activity across several slots" in `docs/spec.md`.
+
+## Contracts
+```ts
+// src/domain/rules/views.ts (addition)
+/** The slots a committed entry may run through, in order: its own slot, then each following slot of its day's
+ *  template until the first one spent by another entry of that day. Empty for quick entries, entries whose slot
+ *  cannot be found, or when the entry does not exist. */
+export function throughChoices(snap: Snapshot, entryId: Id): { item: TemplateItem; displayName: string }[];
+
+// src/domain/logging.ts (addition)
+/** Sets how far a committed entry runs. `throughItemId` null, or the entry's own slot, makes it one slot.
+ *  Anything not in throughChoices is ignored. */
+export function setEntryThrough(store: WatodoStore, entryId: Id, throughItemId: Id | null): void;
+```
+The entry's slot and template: its `itemId`'s item when it exists (that item's template), else the first slot of its section in its day's confirmed template. "Spent by another entry" uses `spentSlots` over that day's other entries with the same template's items. Display names via `slotDisplayNames` of that template.
+
+UI: the Journal entry edit dialog shows a `Through` label and buttons (same look as `SpendConfirm`: chosen and earlier filled, `aria-pressed` on the chosen) when `throughChoices` has more than one; the current value preselected; `Save` also calls `setEntryThrough`.
+
+## Tasks
+### Task 45: change a span in the Journal

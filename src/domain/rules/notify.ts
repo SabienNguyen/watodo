@@ -1,12 +1,13 @@
 import { DAY_START_MINUTES, addDays, dayKeyOf, daysBetween, weekdayOf } from './dayRollover'
 import { entriesBySlot, itemsOf, type Position } from './currentSlot'
 import { activityName } from './names'
+import { bondSummaries } from './bonds'
 import { lastDone } from './lastDone'
 import { nowView, sectionsOfActivity, type NowView } from './views'
 import { weekStartOf, weekView } from './week'
 import type { DayKey, JournalEntry, Snapshot, Template, TemplateItem } from './types'
 
-export type NotifyKind = 'slot' | 'committed' | 'checkIn' | 'rested' | 'recap';
+export type NotifyKind = 'slot' | 'committed' | 'checkIn' | 'rested' | 'bond' | 'recap';
 
 export interface NotifySettings {
   kinds: Record<NotifyKind, boolean>;
@@ -15,14 +16,14 @@ export interface NotifySettings {
 }
 
 export const DEFAULT_NOTIFY: NotifySettings = {
-  kinds: { slot: true, committed: true, checkIn: true, rested: true, recap: true },
+  kinds: { slot: true, committed: true, checkIn: true, rested: true, bond: true, recap: true },
   dailyCap: 3,
   quietStart: 1380,
   quietEnd: 480,
 }
 
 export interface SentNotification { kind: NotifyKind; key: string; at: number }
-export interface DueNotification { kind: NotifyKind; key: string; title: string; body: string; url: string } // url '/' or '/?tab=progress' (recap)
+export interface DueNotification { kind: NotifyKind; key: string; title: string; body: string; url: string } // url '/', '/?tab=progress' (recap) or '/?tab=bonds'
 
 const MINUTE_MS = 60 * 1000
 /** Notifications are spaced at least this far apart, and kinds 1-3 wait this long after a log. */
@@ -66,6 +67,7 @@ export function dueNotification(snap: Snapshot, at: Date, sent: SentNotification
     ['slot', () => (timed ? slotDue(context, open) : [])],
     ['checkIn', () => (timed ? checkInDue(context, open) : [])],
     ['rested', () => restedDue(context)],
+    ['bond', () => bondDue(context)],
     ['recap', () => recapDue(context)],
   ]
   const sentKeys = new Set(sent.map(item => item.key))
@@ -224,6 +226,28 @@ function restedDue(context: Context): DueNotification[] {
       title: `${activity.name} is back`,
       body: sectionsOfActivity(snap, activity.id, today).map(section => section.name).join(' · '),
       url: '/',
+    }]
+  })
+}
+
+/** How long a gap reads: days up to 13, then whole weeks (rounded down) from 14 days. */
+function gapText(days: number): string {
+  if (days >= 14) return `${Math.floor(days / 7)} weeks`
+  return days === 1 ? '1 day' : `${days} days`
+}
+
+function bondDue(context: Context): DueNotification[] {
+  const { snap, today } = context
+  return bondSummaries(snap).flatMap(({ bond, lastSeen }) => {
+    if (bond.catchUpDays === undefined || lastSeen === null) return []
+    const days = daysBetween(dayKeyOf(new Date(lastSeen.loggedAt)), today)
+    if (days < bond.catchUpDays) return []
+    return [{
+      kind: 'bond',
+      key: `bond:${bond.id}:${lastSeen.id}`,
+      title: `It's been ${gapText(days)} since you saw ${bond.name}`,
+      body: `Last time: ${activityName(snap, lastSeen.activityId)}`,
+      url: '/?tab=bonds',
     }]
   })
 }

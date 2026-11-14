@@ -89,3 +89,8 @@ export function sectionName(snap: Snapshot, id: Id): string {
 export function templateName(snap: Snapshot, id: Id): string {
   return nameOf(snap.templates, snap.removed.templates, id)
 }
+
+/** The name of a bond, live or deleted; '(removed)' when no such row exists at all. */
+export function bondName(snap: Snapshot, id: Id): string {
+  return nameOf(snap.bonds, snap.removed.bonds, id)
+}

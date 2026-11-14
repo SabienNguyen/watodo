@@ -7,3 +7,4 @@ export * from './notify';
 export * from './templates';
 export * from './rules';
 export * from './demo';
+export * from './bonds';

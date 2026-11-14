@@ -7,6 +7,7 @@ import { useSnapshot, useWatodo } from '@/ui/hooks'
 import { NowScreen } from '@/ui/now/NowScreen'
 import { JournalScreen } from '@/ui/journal/JournalScreen'
 import { ProgressScreen } from '@/ui/progress/ProgressScreen'
+import { BondsScreen } from '@/ui/bonds/BondsScreen'
 import { EditScreen } from '@/ui/edit/EditScreen'
 import { Tutorial } from '@/ui/tutorial/Tutorial'
 
@@ -14,6 +15,7 @@ const SCREENS = {
   Now: NowScreen,
   Journal: JournalScreen,
   Progress: ProgressScreen,
+  Bonds: BondsScreen,
   Edit: EditScreen,
 } satisfies Record<string, ComponentType>
 
@@ -62,12 +64,12 @@ export default function App() {
         <Screen />
       </main>
       <nav aria-label="Main" className="fixed inset-x-0 bottom-0 border-t bg-background pb-[env(safe-area-inset-bottom)]">
-        <div className="mx-auto grid max-w-[28rem] grid-cols-4">
+        <div className="mx-auto grid max-w-[28rem] grid-cols-5">
           {TABS.map(name => (
             <Button
               key={name}
               variant="ghost"
-              className={`h-14 rounded-none text-sm ${tab === name ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}
+              className={`h-14 rounded-none px-1 text-sm ${tab === name ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}
               aria-current={tab === name ? 'page' : undefined}
               onClick={() => setTab(name)}
             >

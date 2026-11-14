@@ -10,7 +10,7 @@ test('renders the watodo heading', () => {
   expect(screen.getByRole('heading', { level: 1, name: 'watodo' })).toBeInTheDocument()
 })
 
-test('a new store shows the tutorial and no tab bar until a starting day is saved, then the four tabs with Now current', () => {
+test('a new store shows the tutorial and no tab bar until a starting day is saved, then the five tabs with Now current', () => {
   renderWithWatodo(<App />, { store: createWatodoStore() })
 
   expect(screen.getByRole('heading', { level: 1, name: 'watodo' })).toBeInTheDocument()
@@ -26,7 +26,7 @@ test('a new store shows the tutorial and no tab bar until a starting day is save
 
   const tabs = within(screen.getByRole('navigation'))
   const buttons = tabs.getAllByRole('button')
-  expect(buttons.map(button => button.textContent)).toEqual(['Now', 'Journal', 'Progress', 'Edit'])
+  expect(buttons.map(button => button.textContent)).toEqual(['Now', 'Journal', 'Progress', 'Bonds', 'Edit'])
   expect(tabs.getByRole('button', { name: 'Now' })).toHaveAttribute('aria-current', 'page')
   expect(tabs.getByRole('button', { name: 'Journal' })).not.toHaveAttribute('aria-current')
   expect(tabs.queryByRole('button', { name: 'Day' })).toBeNull()
@@ -45,6 +45,16 @@ test('?tab=progress opens on Progress, and the parameter is taken out of the add
   const params = new URLSearchParams(window.location.search)
   expect(params.has('tab')).toBe(false)
   expect(params.has('demo')).toBe(true)
+})
+
+test('?tab=bonds opens Bonds, between Progress and Edit in the tab bar', () => {
+  window.history.replaceState(null, '', '/?tab=bonds')
+  renderWithWatodo(<App />)
+
+  const tabs = within(screen.getByRole('navigation'))
+  expect(tabs.getAllByRole('button').map(button => button.textContent)).toEqual(['Now', 'Journal', 'Progress', 'Bonds', 'Edit'])
+  expect(tabs.getByRole('button', { name: 'Bonds' })).toHaveAttribute('aria-current', 'page')
+  expect(screen.getByText('No bonds yet.')).toBeInTheDocument()
 })
 
 test('the ?tab= name is matched without case, and an unknown name opens Now', () => {
