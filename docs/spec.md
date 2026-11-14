@@ -36,7 +36,7 @@ Some things you do use up the slot they are done in; others do not.
 
 Some things, like dinner out in the city, take up more than one slot. A committed activity can spend the current slot and the slots right after it.
 
-- The spend question (`Spend {slot} on {activity}?`) has a `Through` row of buttons: the current slot, then each following slot up to the first one that is already spent. The current slot is chosen by default, so an ordinary spend is unchanged. Choosing a later slot spends every slot from the current one through it. The question then reads `Spend {first slot} – {last slot} on {activity}?`. With only one slot to offer, the row is not shown.
+- The spend question (`Spend {slot} on {activity}?`) has a `Through` row of buttons: the current slot, then each following slot up to the first one that is already spent. The current slot is chosen by default, so an ordinary spend is unchanged. Choosing a later slot spends every slot from the current one through it. Tapping the last filled slot takes it off, so the span ends one slot earlier; the first slot always stays. The question then reads `Spend {first slot} – {last slot} on {activity}?`. With only one slot to offer, the row is not shown.
 - Every slot it covers is marked spent by that activity, and the Now screen moves to the first open slot after them.
 - The Journal names the span (`Post work – Post dinner`). In the full day the activity is one step that replaces the slots it covered and the fixed steps between them.
 - Undo (the slow, five-second one) reopens every slot it covered.
